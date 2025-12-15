@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Register - WealthTracker{% endblock %}
+
+{% block content %}
+<div style="max-width: 400px; margin: 3rem auto;">
+    <div class="card">
+        <h2 style="text-align: center; margin-bottom: 1.5rem;">Create Account</h2>
+        
+        <form id="registerForm" onsubmit="handleRegister(event)">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password (min 8 characters)</label>
+                <input type="password" id="password" name="password" minlength="8" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="confirmPassword">Confirm Password</label>
+                <input type="password" id="confirmPassword" name="confirmPassword" minlength="8" required>
+            </div>
+            
+            <button type="submit" class="btn btn-success" style="width: 100%;">Register</button>
+        </form>
+        
+        <p style="text-align: center; margin-top: 1rem;">
+            Already have an account? <a href="/ui/login">Login here</a>
+        </p>
+        
+        <div id="message" style="margin-top: 1rem;"></div>
+    </div>
+</div>
+
+<script>
+async function handleRegister(event) {
+    event.preventDefault();
+    
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    const messageDiv = document.getElementById('message');
+    
+    if (password !== confirmPassword) {
+        messageDiv.innerHTML = '<div class="alert alert-error">Passwords do not match!</div>';
+        return;
+    }
+    
+    try {
+        const response = await fetch('http://localhost:8000/auth/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, password })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            messageDiv.innerHTML = '<div class="alert alert-success">Registration successful! Redirecting to login...</div>';
+            setTimeout(() => {
+                window.location.href = '/ui/login';
+            }, 1500);
+        } else {
+            messageDiv.innerHTML = `<div class="alert alert-error">${data.detail || 'Registration failed'}</div>`;
+        }
+    } catch (error) {
+        messageDiv.innerHTML = '<div class="alert alert-error">Network error. Please try again.</div>';
+    }
+}
+</script>
+{% endblock %}

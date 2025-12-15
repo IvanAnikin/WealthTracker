@@ -2,8 +2,9 @@
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
-from app.api import auth, banks, sync, transactions, categories, reports, export
+from app.api import auth, banks, sync, transactions, categories, reports, export, ui
 
 # Configure logging
 logging.basicConfig(
@@ -30,6 +31,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(ui.router)
 app.include_router(auth.router)
 app.include_router(banks.router)
 app.include_router(sync.router)
@@ -37,6 +39,9 @@ app.include_router(transactions.router)
 app.include_router(categories.router)
 app.include_router(reports.router)
 app.include_router(export.router)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 @app.get("/")
