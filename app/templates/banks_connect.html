@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block title %}Connect Bank - WealthTracker{% endblock %}
+
+{% block content %}
+<div style="max-width: 800px; margin: 0 auto;">
+    <h1 style="margin-bottom: 2rem;">🏦 Connect Your Bank</h1>
+    
+    <div class="alert alert-info">
+        <strong>🔒 Secure Connection:</strong> We use Open Banking (PSD2) to connect to your bank. 
+        Your credentials are never stored on our servers. You'll be redirected to your bank's secure login page.
+    </div>
+    
+    <!-- Step Indicator -->
+    <div style="display: flex; justify-content: space-between; margin: 2rem 0; padding: 1rem; background: #ecf0f1; border-radius: 8px;">
+        <div style="flex: 1; text-align: center; padding: 1rem;" id="step1">
+            <div style="font-size: 2rem;">1️⃣</div>
+            <div style="font-weight: 600;">Select Country</div>
+        </div>
+        <div style="flex: 1; text-align: center; padding: 1rem; opacity: 0.5;" id="step2">
+            <div style="font-size: 2rem;">2️⃣</div>
+            <div style="font-weight: 600;">Choose Bank</div>
+        </div>
+        <div style="flex: 1; text-align: center; padding: 1rem; opacity: 0.5;" id="step3">
+            <div style="font-size: 2rem;">3️⃣</div>
+            <div style="font-weight: 600;">Authorize</div>
+        </div>
+    </div>
+    
+    <!-- Step 1: Country Selection -->
+    <div class="card" id="countryStep">
+        <h2>Select Your Country</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; margin-top: 1rem;">
+            <button onclick="selectCountry('CZ')" class="btn" style="padding: 1.5rem;">
+                🇨🇿 Czech Republic
+            </button>
+            <button onclick="selectCountry('SK')" class="btn" style="padding: 1.5rem;">
+                🇸🇰 Slovakia
+            </button>
+            <button onclick="selectCountry('PL')" class="btn" style="padding: 1.5rem;">
+                🇵🇱 Poland
+            </button>
+            <button onclick="selectCountry('DE')" class="btn" style="padding: 1.5rem;">
+                🇩🇪 Germany
+            </button>
+            <button onclick="selectCountry('UK')" class="btn" style="padding: 1.5rem;">
+                🇬🇧 United Kingdom
+            </button>
+            <button onclick="selectCountry('FR')" class="btn" style="padding: 1.5rem;">
+                🇫🇷 France
+            </button>
+        </div>
+    </div>
+    
+    <!-- Step 2: Bank Selection -->
+    <div class="card" id="bankStep" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>Select Your Bank</h2>
+            <button onclick="goBackToCountry()" class="btn btn-secondary">← Back</button>
+        </div>
+        
+        <div class="form-group" style="margin-top: 1rem;">
+            <input type="text" id="bankSearch" placeholder="Search for your bank..." onkeyup="filterBanks()">
+        </div>
+        
+        <div id="banksList" style="margin-top: 1rem;">
+            <p style="color: #7f8c8d;">Loading banks...</p>
+        </div>
+    </div>
+    
+    <!-- Step 3: Authorization -->
+    <div class="card" id="authStep" style="display: none;">
+        <h2>Authorize Connection</h2>
+        <div id="authContent">
+            <p style="color: #7f8c8d;">Preparing connection...</p>
+        </div>
+    </div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+let selectedCountry = '';
+let selectedBank = '';
+let institutions = [];
+
+async function fetchAPI(endpoint, options = {}) {
+    try {
+        const response = await fetch(`http://localhost:8000${endpoint}`, {
+            ...options,
+            headers: {
+                'Authorization': `******`,
+                ...options.headers
+            }
+        });
+        if (!response.ok) throw new Error('API request failed');
+        return await response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        return null;
+    }
+}
+
+async function selectCountry(country) {
+    selectedCountry = country;
+    
+    // Update step indicator
+    document.getElementById('step1').style.opacity = '0.5';
+    document.getElementById('step2').style.opacity = '1';
+    
+    // Show bank step
+    document.getElementById('countryStep').style.display = 'none';
+    document.getElementById('bankStep').style.display = 'block';
+    
+    // Load banks
+    institutions = await fetchAPI(`/banks/institutions?country=${country}`);
+    displayBanks(institutions);
+}
+
+function displayBanks(banks) {
+    if (!banks || banks.length === 0) {
+        document.getElementById('banksList').innerHTML = `
+            <div class="alert alert-error">
+                No banks available for this country. Please try another country or use the mock bank for testing.
+            </div>
+            <button onclick="selectBank('MOCK_BANK_${selectedCountry}', 'Mock Bank ${selectedCountry}')" class="btn btn-success" style="margin-top: 1rem;">
+                Use Mock Bank (for testing)
+            </button>
+        `;
+        return;
+    }
+    
+    let html = '<div style="display: grid; gap: 1rem;">';
+    
+    banks.forEach(bank => {
+        html += `
+            <div onclick="selectBank('${bank.id}', '${bank.name}')" style="
+                padding: 1rem;
+                border: 2px solid #ecf0f1;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+            " onmouseover="this.style.borderColor='#3498db'" onmouseout="this.style.borderColor='#ecf0f1'">
+                ${bank.logo_url ? `<img src="${bank.logo_url}" alt="${bank.name}" style="width: 48px; height: 48px; object-fit: contain;">` : '<div style="width: 48px; height: 48px; background: #ecf0f1; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">🏦</div>'}
+                <div>
+                    <strong>${bank.name}</strong><br>
+                    <span style="color: #7f8c8d; font-size: 0.9rem;">${bank.id}</span>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    document.getElementById('banksList').innerHTML = html;
+}
+
+function filterBanks() {
+    const search = document.getElementById('bankSearch').value.toLowerCase();
+    if (!search) {
+        displayBanks(institutions);
+        return;
+    }
+    
+    const filtered = institutions.filter(bank => 
+        bank.name.toLowerCase().includes(search) || 
+        bank.id.toLowerCase().includes(search)
+    );
+    displayBanks(filtered);
+}
+
+async function selectBank(bankId, bankName) {
+    selectedBank = bankId;
+    
+    // Update step indicator
+    document.getElementById('step2').style.opacity = '0.5';
+    document.getElementById('step3').style.opacity = '1';
+    
+    // Show auth step
+    document.getElementById('bankStep').style.display = 'none';
+    document.getElementById('authStep').style.display = 'block';
+    
+    document.getElementById('authContent').innerHTML = `
+        <div style="text-align: center; padding: 2rem;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">🏦</div>
+            <h3 style="margin-bottom: 1rem;">${bankName}</h3>
+            <p style="color: #7f8c8d; margin-bottom: 2rem;">
+                You'll be redirected to your bank's secure login page to authorize this connection.
+            </p>
+            <button onclick="initiateConnection()" class="btn btn-success" style="font-size: 1.1rem; padding: 1rem 2rem;">
+                Continue to Bank Login →
+            </button>
+        </div>
+    `;
+}
+
+async function initiateConnection() {
+    const redirectUrl = `${window.location.origin}/ui/banks/callback`;
+    
+    document.getElementById('authContent').innerHTML = `
+        <div style="text-align: center; padding: 2rem;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">⏳</div>
+            <h3>Creating connection...</h3>
+            <p style="color: #7f8c8d;">Please wait while we prepare your bank connection.</p>
+        </div>
+    `;
+    
+    const result = await fetchAPI('/banks/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            institution_id: selectedBank,
+            redirect_url: redirectUrl
+        })
+    });
+    
+    if (result && result.redirect_url) {
+        document.getElementById('authContent').innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
+                <h3 style="margin-bottom: 1rem;">Connection Ready!</h3>
+                <p style="color: #7f8c8d; margin-bottom: 2rem;">
+                    Click below to open your bank's login page.
+                </p>
+                <a href="${result.redirect_url}" class="btn btn-success" style="font-size: 1.1rem; padding: 1rem 2rem;">
+                    Open Bank Login →
+                </a>
+                <p style="color: #95a5a6; margin-top: 2rem; font-size: 0.9rem;">
+                    After authorizing, you'll be redirected back to complete the setup.
+                </p>
+            </div>
+        `;
+    } else {
+        document.getElementById('authContent').innerHTML = `
+            <div class="alert alert-error">
+                <strong>Connection failed!</strong> Please try again or contact support.
+            </div>
+            <button onclick="window.location.href='/ui/accounts'" class="btn" style="margin-top: 1rem;">
+                Back to Accounts
+            </button>
+        `;
+    }
+}
+
+function goBackToCountry() {
+    document.getElementById('step1').style.opacity = '1';
+    document.getElementById('step2').style.opacity = '0.5';
+    document.getElementById('bankStep').style.display = 'none';
+    document.getElementById('countryStep').style.display = 'block';
+}
+</script>
+{% endblock %}

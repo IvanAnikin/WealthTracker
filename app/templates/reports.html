@@ -1,0 +1,494 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - WealthTracker{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chart-container {
+        position: relative;
+        height: 400px;
+        margin-top: 1rem;
+    }
+    
+    .period-selector {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .period-btn {
+        padding: 0.5rem 1rem;
+        border: 1px solid #ddd;
+        background: white;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .period-btn.active {
+        background: #3498db;
+        color: white;
+        border-color: #3498db;
+    }
+    
+    .period-btn:hover {
+        background: #ecf0f1;
+    }
+    
+    .period-btn.active:hover {
+        background: #2980b9;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h1>📊 Financial Reports</h1>
+    <div style="display: flex; gap: 1rem;">
+        <a href="/export/cashflow.csv" class="btn btn-secondary">💾 Export Cashflow</a>
+        <a href="/export/categories.csv" class="btn btn-secondary">💾 Export Categories</a>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="grid" id="summaryStats">
+    <div class="stat-card">
+        <h3>CURRENT BALANCE</h3>
+        <div class="value" id="currentBalance">Loading...</div>
+    </div>
+    <div class="stat-card">
+        <h3>THIS MONTH INCOME</h3>
+        <div class="value positive" id="monthIncome">0</div>
+    </div>
+    <div class="stat-card">
+        <h3>THIS MONTH EXPENSES</h3>
+        <div class="value negative" id="monthExpenses">0</div>
+    </div>
+    <div class="stat-card">
+        <h3>THIS MONTH NET</h3>
+        <div class="value" id="monthNet">0</div>
+    </div>
+</div>
+
+<!-- Cashflow Chart -->
+<div class="card">
+    <h2>💰 Income vs Expenses</h2>
+    <div class="period-selector">
+        <button class="period-btn active" onclick="setCashflowPeriod('6months')">6 Months</button>
+        <button class="period-btn" onclick="setCashflowPeriod('12months')">12 Months</button>
+        <button class="period-btn" onclick="setCashflowPeriod('2years')">2 Years</button>
+    </div>
+    <div class="chart-container">
+        <canvas id="cashflowChart"></canvas>
+    </div>
+</div>
+
+<!-- Category Breakdown -->
+<div class="card">
+    <h2>📦 Spending by Category</h2>
+    <div class="period-selector">
+        <button class="period-btn active" onclick="setCategoryPeriod('30days')">Last 30 Days</button>
+        <button class="period-btn" onclick="setCategoryPeriod('90days')">Last 90 Days</button>
+        <button class="period-btn" onclick="setCategoryPeriod('365days')">Last Year</button>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem;">
+        <div class="chart-container">
+            <canvas id="categoryPieChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="categoryBarChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Net Worth Trend -->
+<div class="card">
+    <h2>📈 Net Worth Trend</h2>
+    <div class="chart-container">
+        <canvas id="netWorthChart"></canvas>
+    </div>
+</div>
+
+<!-- Weekly Breakdown -->
+<div class="card">
+    <h2>📅 Weekly Breakdown (Last 12 Weeks)</h2>
+    <div class="chart-container">
+        <canvas id="weeklyChart"></canvas>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const token = localStorage.getItem('token');
+let cashflowChart, categoryPieChart, categoryBarChart, netWorthChart, weeklyChart;
+let cashflowPeriod = '6months';
+let categoryPeriod = '30days';
+
+async function fetchAPI(endpoint) {
+    try {
+        const response = await fetch(`http://localhost:8000${endpoint}`, {
+            headers: { 'Authorization': `******` }
+        });
+        if (!response.ok) throw new Error('API request failed');
+        return await response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        return null;
+    }
+}
+
+function getDateRange(period) {
+    const end = new Date();
+    const start = new Date();
+    
+    switch(period) {
+        case '30days':
+            start.setDate(start.getDate() - 30);
+            break;
+        case '90days':
+            start.setDate(start.getDate() - 90);
+            break;
+        case '365days':
+            start.setFullYear(start.getFullYear() - 1);
+            break;
+        case '6months':
+            start.setMonth(start.getMonth() - 6);
+            break;
+        case '12months':
+            start.setFullYear(start.getFullYear() - 1);
+            break;
+        case '2years':
+            start.setFullYear(start.getFullYear() - 2);
+            break;
+    }
+    
+    return { start: start.toISOString(), end: end.toISOString() };
+}
+
+async function loadSummaryStats() {
+    // Current balance
+    const balances = await fetchAPI('/transactions/balances/net');
+    if (balances && balances.balances_by_currency) {
+        const currencies = Object.keys(balances.balances_by_currency);
+        if (currencies.length > 0) {
+            const balance = balances.balances_by_currency[currencies[0]];
+            document.getElementById('currentBalance').textContent = 
+                `${balance.toFixed(2)} ${currencies[0]}`;
+        }
+    }
+    
+    // This month stats
+    const start = new Date();
+    start.setDate(1);
+    const stats = await fetchAPI(`/reports/statistics?start_date=${start.toISOString()}`);
+    if (stats) {
+        document.getElementById('monthIncome').textContent = `+${stats.total_income.toFixed(2)}`;
+        document.getElementById('monthExpenses').textContent = stats.total_expenses.toFixed(2);
+        
+        const net = stats.net;
+        const netEl = document.getElementById('monthNet');
+        netEl.textContent = (net >= 0 ? '+' : '') + net.toFixed(2);
+        netEl.className = 'value ' + (net >= 0 ? 'positive' : 'negative');
+    }
+}
+
+async function loadCashflowChart(period = '6months') {
+    const dateRange = getDateRange(period);
+    const cashflow = await fetchAPI(`/reports/cashflow?start_date=${dateRange.start}&end_date=${dateRange.end}`);
+    
+    if (!cashflow || cashflow.length === 0) {
+        console.log('No cashflow data');
+        return;
+    }
+    
+    const labels = cashflow.map(d => d.month);
+    const income = cashflow.map(d => d.income);
+    const expenses = cashflow.map(d => d.expenses);
+    const net = cashflow.map(d => d.net);
+    
+    const ctx = document.getElementById('cashflowChart');
+    
+    if (cashflowChart) cashflowChart.destroy();
+    
+    cashflowChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Income',
+                    data: income,
+                    borderColor: '#27ae60',
+                    backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Expenses',
+                    data: expenses,
+                    borderColor: '#e74c3c',
+                    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Net',
+                    data: net,
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                title: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+async function loadCategoryCharts(period = '30days') {
+    const dateRange = getDateRange(period);
+    const categories = await fetchAPI(`/reports/categories?start_date=${dateRange.start}&end_date=${dateRange.end}`);
+    
+    if (!categories || categories.length === 0) {
+        console.log('No category data');
+        return;
+    }
+    
+    // Filter out income categories and get top expenses
+    const expenseCategories = categories
+        .filter(c => c.amount < 0)
+        .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+        .slice(0, 10);
+    
+    const labels = expenseCategories.map(c => c.category_name);
+    const amounts = expenseCategories.map(c => Math.abs(c.amount));
+    const colors = [
+        '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
+        '#1abc9c', '#34495e', '#e67e22', '#95a5a6', '#d35400'
+    ];
+    
+    // Pie Chart
+    const pieCtx = document.getElementById('categoryPieChart');
+    if (categoryPieChart) categoryPieChart.destroy();
+    
+    categoryPieChart = new Chart(pieCtx, {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: amounts,
+                backgroundColor: colors
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                },
+                title: {
+                    display: true,
+                    text: 'Category Distribution'
+                }
+            }
+        }
+    });
+    
+    // Bar Chart
+    const barCtx = document.getElementById('categoryBarChart');
+    if (categoryBarChart) categoryBarChart.destroy();
+    
+    categoryBarChart = new Chart(barCtx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Amount Spent',
+                data: amounts,
+                backgroundColor: colors
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                title: {
+                    display: true,
+                    text: 'Top Spending Categories'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+async function loadNetWorthChart() {
+    const dateRange = getDateRange('12months');
+    const cashflow = await fetchAPI(`/reports/cashflow?start_date=${dateRange.start}&end_date=${dateRange.end}`);
+    
+    if (!cashflow || cashflow.length === 0) return;
+    
+    // Calculate cumulative net worth
+    let netWorth = 0;
+    const netWorthData = cashflow.map(d => {
+        netWorth += d.net;
+        return netWorth;
+    });
+    
+    const ctx = document.getElementById('netWorthChart');
+    if (netWorthChart) netWorthChart.destroy();
+    
+    netWorthChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: cashflow.map(d => d.month),
+            datasets: [{
+                label: 'Net Worth',
+                data: netWorthData,
+                borderColor: '#3498db',
+                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false
+                }
+            }
+        }
+    });
+}
+
+async function loadWeeklyChart() {
+    // Generate weekly data from transactions
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 84); // 12 weeks
+    
+    const transactions = await fetchAPI(`/transactions?date_from=${startDate.toISOString()}&date_to=${endDate.toISOString()}&limit=1000`);
+    
+    if (!transactions || transactions.length === 0) return;
+    
+    // Group by week
+    const weeks = {};
+    transactions.forEach(tx => {
+        const date = new Date(tx.booking_date);
+        const weekStart = new Date(date);
+        weekStart.setDate(date.getDate() - date.getDay());
+        const weekKey = weekStart.toISOString().split('T')[0];
+        
+        if (!weeks[weekKey]) {
+            weeks[weekKey] = { income: 0, expenses: 0 };
+        }
+        
+        if (tx.amount > 0) {
+            weeks[weekKey].income += tx.amount;
+        } else {
+            weeks[weekKey].expenses += Math.abs(tx.amount);
+        }
+    });
+    
+    const sortedWeeks = Object.keys(weeks).sort();
+    const labels = sortedWeeks.map(w => {
+        const date = new Date(w);
+        return `Week of ${date.toLocaleDateString()}`;
+    });
+    const income = sortedWeeks.map(w => weeks[w].income);
+    const expenses = sortedWeeks.map(w => weeks[w].expenses);
+    
+    const ctx = document.getElementById('weeklyChart');
+    if (weeklyChart) weeklyChart.destroy();
+    
+    weeklyChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Income',
+                    data: income,
+                    backgroundColor: 'rgba(39, 174, 96, 0.7)'
+                },
+                {
+                    label: 'Expenses',
+                    data: expenses,
+                    backgroundColor: 'rgba(231, 76, 60, 0.7)'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+function setCashflowPeriod(period) {
+    cashflowPeriod = period;
+    document.querySelectorAll('.card:nth-of-type(2) .period-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    loadCashflowChart(period);
+}
+
+function setCategoryPeriod(period) {
+    categoryPeriod = period;
+    document.querySelectorAll('.card:nth-of-type(3) .period-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    loadCategoryCharts(period);
+}
+
+// Initialize all charts
+loadSummaryStats();
+loadCashflowChart(cashflowPeriod);
+loadCategoryCharts(categoryPeriod);
+loadNetWorthChart();
+loadWeeklyChart();
+</script>
+{% endblock %}

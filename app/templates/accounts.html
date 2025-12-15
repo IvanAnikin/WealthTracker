@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}Accounts - WealthTracker{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h1>💳 Bank Accounts</h1>
+    <a href="/ui/banks/connect" class="btn btn-success">➕ Connect New Bank</a>
+</div>
+
+<!-- Account Summary -->
+<div class="grid" id="accountSummary">
+    <div class="stat-card">
+        <h3>TOTAL ACCOUNTS</h3>
+        <div class="value" id="totalAccounts">0</div>
+    </div>
+    <div class="stat-card">
+        <h3>TOTAL BALANCE</h3>
+        <div class="value" id="totalBalance">0</div>
+    </div>
+    <div class="stat-card">
+        <h3>ACTIVE CONNECTIONS</h3>
+        <div class="value" id="activeConnections">0</div>
+    </div>
+    <div class="stat-card">
+        <h3>LAST SYNCED</h3>
+        <div class="value" style="font-size: 1.2rem;" id="lastSynced">Never</div>
+    </div>
+</div>
+
+<!-- Accounts List -->
+<div class="card">
+    <h2>Your Accounts</h2>
+    <div id="accountsList">
+        <p style="color: #7f8c8d;">Loading accounts...</p>
+    </div>
+</div>
+
+<!-- Bank Connections -->
+<div class="card">
+    <h2>🏦 Bank Connections</h2>
+    <div id="connectionsList">
+        <p style="color: #7f8c8d;">Loading connections...</p>
+    </div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+
+async function fetchAPI(endpoint, options = {}) {
+    try {
+        const response = await fetch(`http://localhost:8000${endpoint}`, {
+            ...options,
+            headers: {
+                'Authorization': `******`,
+                ...options.headers
+            }
+        });
+        if (!response.ok) throw new Error('API request failed');
+        return await response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        return null;
+    }
+}
+
+async function loadAccounts() {
+    const accounts = await fetchAPI('/banks/accounts');
+    
+    if (!accounts || accounts.length === 0) {
+        document.getElementById('accountsList').innerHTML = `
+            <p style="color: #7f8c8d; text-align: center; padding: 2rem;">
+                No accounts connected yet. 
+                <a href="/ui/banks/connect">Connect your first bank</a> to get started.
+            </p>
+        `;
+        return;
+    }
+    
+    document.getElementById('totalAccounts').textContent = accounts.length;
+    
+    // Get balances for all accounts
+    const balances = await fetchAPI('/transactions/balances/current');
+    const balanceMap = {};
+    if (balances) {
+        balances.forEach(b => {
+            balanceMap[b.account_id] = b.balance;
+        });
+    }
+    
+    let totalBalance = 0;
+    let lastSyncDate = null;
+    
+    let html = '<div style="display: grid; gap: 1rem;">';
+    
+    accounts.forEach(account => {
+        const balance = balanceMap[account.id] || 0;
+        totalBalance += balance;
+        
+        if (account.last_synced_at) {
+            const syncDate = new Date(account.last_synced_at);
+            if (!lastSyncDate || syncDate > lastSyncDate) {
+                lastSyncDate = syncDate;
+            }
+        }
+        
+        html += `
+            <div style="
+                padding: 1.5rem;
+                border: 2px solid #ecf0f1;
+                border-radius: 8px;
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 1rem;
+                align-items: center;
+                transition: all 0.2s;
+            " onmouseover="this.style.borderColor='#3498db'" onmouseout="this.style.borderColor='#ecf0f1'">
+                <div>
+                    <h3 style="margin: 0 0 0.5rem 0; color: #2c3e50;">
+                        ${account.name || 'Account ' + account.id.substring(0, 8)}
+                    </h3>
+                    <p style="margin: 0; color: #7f8c8d; font-size: 0.9rem;">
+                        ${account.iban || 'No IBAN'} • ${account.currency}
+                    </p>
+                    <p style="margin: 0.5rem 0 0 0; color: #95a5a6; font-size: 0.85rem;">
+                        ${account.account_type || 'Standard Account'}
+                        ${account.owner_name ? ' • ' + account.owner_name : ''}
+                    </p>
+                    ${account.last_synced_at ? `
+                        <p style="margin: 0.5rem 0 0 0; color: #95a5a6; font-size: 0.85rem;">
+                            Last synced: ${new Date(account.last_synced_at).toLocaleString()}
+                        </p>
+                    ` : ''}
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 2rem; font-weight: 700; color: ${balance >= 0 ? '#27ae60' : '#e74c3c'};">
+                        ${balance.toFixed(2)}
+                    </div>
+                    <div style="color: #7f8c8d; font-size: 0.9rem;">
+                        ${account.currency}
+                    </div>
+                    <button onclick="syncAccount('${account.id}')" class="btn" style="margin-top: 0.5rem;">
+                        🔄 Sync
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    document.getElementById('accountsList').innerHTML = html;
+    
+    // Update summary
+    document.getElementById('totalBalance').textContent = totalBalance.toFixed(2);
+    if (lastSyncDate) {
+        document.getElementById('lastSynced').textContent = lastSyncDate.toLocaleString();
+    }
+}
+
+async function loadConnections() {
+    const requisitions = await fetchAPI('/banks/requisitions');
+    
+    if (!requisitions || requisitions.length === 0) {
+        document.getElementById('connectionsList').innerHTML = `
+            <p style="color: #7f8c8d;">No bank connections yet.</p>
+        `;
+        return;
+    }
+    
+    const activeCount = requisitions.filter(r => r.status === 'linked' || r.status === 'LN').length;
+    document.getElementById('activeConnections').textContent = activeCount;
+    
+    let html = '<div style="display: grid; gap: 1rem;">';
+    
+    requisitions.forEach(req => {
+        const statusColors = {
+            'created': '#f39c12',
+            'linked': '#27ae60',
+            'LN': '#27ae60',
+            'expired': '#95a5a6',
+            'revoked': '#e74c3c'
+        };
+        
+        const statusColor = statusColors[req.status] || '#7f8c8d';
+        
+        html += `
+            <div style="
+                padding: 1rem;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            ">
+                <div>
+                    <strong>Institution:</strong> ${req.institution_id}<br>
+                    <span style="color: #7f8c8d; font-size: 0.9rem;">
+                        Created: ${new Date(req.created_at).toLocaleString()}
+                    </span>
+                    ${req.linked_at ? `<br><span style="color: #7f8c8d; font-size: 0.9rem;">
+                        Linked: ${new Date(req.linked_at).toLocaleString()}
+                    </span>` : ''}
+                </div>
+                <div style="text-align: right;">
+                    <span style="
+                        padding: 0.25rem 0.75rem;
+                        border-radius: 4px;
+                        background: ${statusColor};
+                        color: white;
+                        font-size: 0.85rem;
+                        display: inline-block;
+                        margin-bottom: 0.5rem;
+                    ">${req.status}</span><br>
+                    ${req.status === 'linked' || req.status === 'LN' ? `
+                        <button onclick="disconnectBank('${req.id}')" class="btn btn-danger" style="padding: 0.4rem 0.8rem; font-size: 0.9rem;">
+                            Disconnect
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    document.getElementById('connectionsList').innerHTML = html;
+}
+
+async function syncAccount(accountId) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳ Syncing...';
+    
+    await fetchAPI('/sync/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId })
+    });
+    
+    await loadAccounts();
+    btn.disabled = false;
+    btn.textContent = '🔄 Sync';
+    alert('Account synced successfully!');
+}
+
+async function disconnectBank(requisitionId) {
+    if (!confirm('Are you sure you want to disconnect this bank? Your transaction history will remain.')) {
+        return;
+    }
+    
+    await fetchAPI(`/banks/requisitions/${requisitionId}`, {
+        method: 'DELETE'
+    });
+    
+    alert('Bank disconnected successfully!');
+    loadConnections();
+    loadAccounts();
+}
+
+// Initialize
+loadAccounts();
+loadConnections();
+</script>
+{% endblock %}

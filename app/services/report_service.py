@@ -1,7 +1,7 @@
 """Reporting service for cashflow and category analysis."""
 from datetime import datetime, timedelta
 from typing import List, Optional
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, case
 from sqlalchemy.orm import Session
 from app.models import Transaction, Account, Category, TransactionCategory
 
@@ -37,13 +37,13 @@ def get_monthly_cashflow(
         extract('year', Transaction.booking_date).label('year'),
         extract('month', Transaction.booking_date).label('month'),
         func.sum(
-            func.case(
+            case(
                 (Transaction.amount > 0, Transaction.amount),
                 else_=0
             )
         ).label('income'),
         func.sum(
-            func.case(
+            case(
                 (Transaction.amount < 0, Transaction.amount),
                 else_=0
             )

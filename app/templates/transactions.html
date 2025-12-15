@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}Transactions - WealthTracker{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h1>Transactions</h1>
+    <div style="display: flex; gap: 1rem;">
+        <button onclick="syncAccounts()" class="btn">🔄 Sync</button>
+        <a href="/export/transactions.csv" class="btn btn-secondary">💾 Export CSV</a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card" style="margin-bottom: 1.5rem;">
+    <h2>Filters</h2>
+    <form id="filterForm" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+        <div class="form-group">
+            <label for="accountFilter">Account</label>
+            <select id="accountFilter" name="account">
+                <option value="">All Accounts</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="dateFrom">Date From</label>
+            <input type="date" id="dateFrom" name="dateFrom">
+        </div>
+        
+        <div class="form-group">
+            <label for="dateTo">Date To</label>
+            <input type="date" id="dateTo" name="dateTo">
+        </div>
+        
+        <div class="form-group">
+            <label for="statusFilter">Status</label>
+            <select id="statusFilter" name="status">
+                <option value="">All</option>
+                <option value="booked">Booked</option>
+                <option value="pending">Pending</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="searchText">Search</label>
+            <input type="text" id="searchText" name="search" placeholder="Description or counterparty...">
+        </div>
+        
+        <div class="form-group" style="display: flex; align-items: flex-end;">
+            <button type="button" onclick="applyFilters()" class="btn" style="width: 100%;">Apply Filters</button>
+        </div>
+    </form>
+</div>
+
+<!-- Summary Stats -->
+<div class="grid" id="transactionStats" style="margin-bottom: 1.5rem;">
+    <div class="stat-card">
+        <h3>TOTAL TRANSACTIONS</h3>
+        <div class="value" id="totalCount">0</div>
+    </div>
+    <div class="stat-card">
+        <h3>TOTAL INCOME</h3>
+        <div class="value positive" id="totalIncome">0</div>
+    </div>
+    <div class="stat-card">
+        <h3>TOTAL EXPENSES</h3>
+        <div class="value negative" id="totalExpenses">0</div>
+    </div>
+    <div class="stat-card">
+        <h3>NET</h3>
+        <div class="value" id="netAmount">0</div>
+    </div>
+</div>
+
+<!-- Transactions Table -->
+<div class="card">
+    <h2>Transaction List</h2>
+    <div id="transactionsTable">
+        <p style="color: #7f8c8d;">Loading transactions...</p>
+    </div>
+    
+    <!-- Pagination -->
+    <div id="pagination" style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 1rem;">
+    </div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+let currentPage = 1;
+let currentFilters = {};
+let allTransactions = [];
+
+async function fetchAPI(endpoint) {
+    try {
+        const response = await fetch(`http://localhost:8000${endpoint}`, {
+            headers: { 'Authorization': `******` }
+        });
+        if (!response.ok) throw new Error('API request failed');
+        return await response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        return null;
+    }
+}
+
+async function loadAccounts() {
+    const accounts = await fetchAPI('/banks/accounts');
+    if (accounts && accounts.length > 0) {
+        const select = document.getElementById('accountFilter');
+        accounts.forEach(account => {
+            const option = document.createElement('option');
+            option.value = account.id;
+            option.textContent = `${account.name || 'Account'} (${account.currency})`;
+            select.appendChild(option);
+        });
+    }
+}
+
+async function loadTransactions(filters = {}) {
+    const params = new URLSearchParams({
+        limit: '1000',
+        ...filters
+    });
+    
+    const transactions = await fetchAPI(`/transactions?${params}`);
+    if (transactions) {
+        allTransactions = transactions;
+        displayTransactions(transactions);
+        updateStats(transactions);
+    }
+}
+
+function displayTransactions(transactions) {
+    const searchText = document.getElementById('searchText').value.toLowerCase();
+    
+    // Filter by search text
+    let filtered = transactions;
+    if (searchText) {
+        filtered = transactions.filter(tx => 
+            (tx.description && tx.description.toLowerCase().includes(searchText)) ||
+            (tx.counterparty && tx.counterparty.toLowerCase().includes(searchText))
+        );
+    }
+    
+    if (filtered.length === 0) {
+        document.getElementById('transactionsTable').innerHTML = 
+            '<p style="color: #7f8c8d;">No transactions found.</p>';
+        return;
+    }
+    
+    let html = `
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Counterparty</th>
+                    <th>Category</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    filtered.forEach(tx => {
+        const date = new Date(tx.booking_date).toLocaleDateString();
+        const amountClass = tx.amount > 0 ? 'positive' : 'negative';
+        const categories = tx.categories && tx.categories.length > 0 
+            ? tx.categories.join(', ') 
+            : '<span style="color: #95a5a6;">Uncategorized</span>';
+        
+        html += `
+            <tr onclick="viewTransaction('${tx.id}')" style="cursor: pointer;">
+                <td>${date}</td>
+                <td>${tx.description || 'N/A'}</td>
+                <td>${tx.counterparty || 'N/A'}</td>
+                <td>${categories}</td>
+                <td class="${amountClass}">${tx.amount.toFixed(2)} ${tx.currency}</td>
+                <td>
+                    <span style="
+                        padding: 0.25rem 0.5rem;
+                        border-radius: 4px;
+                        font-size: 0.85rem;
+                        background-color: ${tx.status === 'booked' ? '#d4edda' : '#fff3cd'};
+                        color: ${tx.status === 'booked' ? '#155724' : '#856404'};
+                    ">${tx.status}</span>
+                </td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table>';
+    document.getElementById('transactionsTable').innerHTML = html;
+}
+
+function updateStats(transactions) {
+    let income = 0;
+    let expenses = 0;
+    
+    transactions.forEach(tx => {
+        if (tx.amount > 0) income += tx.amount;
+        else expenses += Math.abs(tx.amount);
+    });
+    
+    const net = income - expenses;
+    
+    document.getElementById('totalCount').textContent = transactions.length;
+    document.getElementById('totalIncome').textContent = `+${income.toFixed(2)}`;
+    document.getElementById('totalExpenses').textContent = expenses.toFixed(2);
+    
+    const netElement = document.getElementById('netAmount');
+    netElement.textContent = (net >= 0 ? '+' : '') + net.toFixed(2);
+    netElement.className = 'value ' + (net >= 0 ? 'positive' : 'negative');
+}
+
+function applyFilters() {
+    const filters = {};
+    
+    const account = document.getElementById('accountFilter').value;
+    if (account) filters.account_id = account;
+    
+    const dateFrom = document.getElementById('dateFrom').value;
+    if (dateFrom) filters.date_from = dateFrom;
+    
+    const dateTo = document.getElementById('dateTo').value;
+    if (dateTo) filters.date_to = dateTo;
+    
+    const status = document.getElementById('statusFilter').value;
+    if (status) filters.status = status;
+    
+    currentFilters = filters;
+    loadTransactions(filters);
+}
+
+function viewTransaction(id) {
+    alert(`Transaction details for ${id}\n\nThis would show detailed transaction information in a modal.`);
+}
+
+async function syncAccounts() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳ Syncing...';
+    
+    await fetchAPI('/sync/');
+    await loadTransactions(currentFilters);
+    
+    btn.disabled = false;
+    btn.textContent = '🔄 Sync';
+    alert('Sync complete!');
+}
+
+// Initialize
+loadAccounts();
+loadTransactions();
+
+// Allow enter key to apply filters
+document.getElementById('searchText').addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') applyFilters();
+    else displayTransactions(allTransactions); // Live search
+});
+</script>
+{% endblock %}
