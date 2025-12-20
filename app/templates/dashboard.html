@@ -64,6 +64,43 @@
 const token = localStorage.getItem('token') || 'demo-token';
 const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;
 
+// Check if user is authenticated
+async function checkAuth() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/auth/me`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        if (!response.ok) {
+            // Not authenticated, redirect to login
+            showAuthPrompt();
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.error('Auth check error:', error);
+        showAuthPrompt();
+        return false;
+    }
+}
+
+function showAuthPrompt() {
+    const container = document.querySelector('main');
+    container.innerHTML = `
+        <div class="card" style="max-width: 600px; margin: 3rem auto; text-align: center;">
+            <h2>Welcome to WealthTracker 🏦</h2>
+            <p style="margin: 1.5rem 0; color: #7f8c8d; font-size: 1.1rem;">
+                A secure, Python-based web application that aggregates bank accounts via PSD2 Open Banking.
+            </p>
+            <div style="display: flex; gap: 1rem; justify-content: center; margin: 2rem 0;">
+                <a href="/ui/login" class="btn" style="background-color: #3498db; padding: 0.8rem 1.5rem; font-size: 1.1rem;">🔐 Login</a>
+                <a href="/ui/register" class="btn btn-success" style="padding: 0.8rem 1.5rem; font-size: 1.1rem;">📝 Register</a>
+            </div>
+        </div>
+    `;
+}
+
 async function fetchAPI(endpoint) {
     try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -169,6 +206,11 @@ async function syncAccounts() {
 }
 
 // Load dashboard on page load
-loadDashboard();
+(async () => {
+    const isAuthenticated = await checkAuth();
+    if (isAuthenticated) {
+        loadDashboard();
+    }
+})();
 </script>
 {% endblock %}
