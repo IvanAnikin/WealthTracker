@@ -62,10 +62,11 @@
 <script>
 // Get token from localStorage (you'll need to implement proper authentication)
 const token = localStorage.getItem('token') || 'demo-token';
+const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;
 
 async function fetchAPI(endpoint) {
     try {
-        const response = await fetch(`http://localhost:8000${endpoint}`, {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }

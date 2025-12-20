@@ -120,13 +120,14 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 const token = localStorage.getItem('token');
+const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;
 let cashflowChart, categoryPieChart, categoryBarChart, netWorthChart, weeklyChart;
 let cashflowPeriod = '6months';
 let categoryPeriod = '30days';
 
 async function fetchAPI(endpoint) {
     try {
-        const response = await fetch(`http://localhost:8000${endpoint}`, {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             headers: { 'Authorization': `******` }
         });
         if (!response.ok) throw new Error('API request failed');
