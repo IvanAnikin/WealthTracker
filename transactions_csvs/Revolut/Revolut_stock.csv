@@ -1,0 +1,12 @@
+Income from Sells
+Date acquired,Date sold,Symbol,Security name,ISIN,Country,Quantity,Cost basis,Gross proceeds,Gross PnL,Currency
+2024-11-26,2025-10-20,INTC,Intel,US4581401001,US,1.00170272,25.00,37.64,12.64,USD
+2024-12-09,2025-08-12,RBRK,Rubrik,US7811541090,US,0.7727557,49.41,66.85,17.44,USD
+2024-12-09,2025-08-19,RBRK,Rubrik,US7811541090,US,0.38637786,24.71,33.46,8.75,USD
+
+Other income & fees
+Date,Symbol,Security name,ISIN,Country,Gross amount,Withholding tax,Net Amount,Currency
+2024-12-31,VUSA,Vanguard S&amp;P 500 Dist ETF dividend,IE00B3XXRP09,IE,3.27,$0,3.27 CZK,CZK
+2025-04-10,VUSA,Vanguard S&amp;P 500 Dist ETF dividend,IE00B3XXRP09,IE,3.00,$0,3 CZK,CZK
+2025-07-09,VUSA,Vanguard S&amp;P 500 Dist ETF dividend,IE00B3XXRP09,IE,2.71,$0,2.71 CZK,CZK
+2025-10-03,VUSA,Vanguard S&amp;P 500 Dist ETF dividend,IE00B3XXRP09,IE,2.66,$0,2.66 CZK,CZK

@@ -73,12 +73,13 @@ class Account(Base):
     id = Column(String(255), primary_key=True)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     institution_id = Column(String(255), ForeignKey("institutions.id"), nullable=False)
-    requisition_id = Column(String(255), ForeignKey("requisitions.id"), nullable=False)
+    requisition_id = Column(String(255), ForeignKey("requisitions.id"), nullable=True)  # NULL for manual CSV imports
     iban = Column(String(34), nullable=True)
     currency = Column(String(3), nullable=False, default="EUR")
     name = Column(String(255), nullable=True)
-    account_type = Column(String(50), nullable=True)
+    account_type = Column(String(50), nullable=True)  # e.g., "Raiffeisen main", "Revolut CZK", "Revolut Crypto"
     owner_name = Column(String(255), nullable=True)
+    source_type = Column(String(50), nullable=False, default="api")  # api, csv_manual
     initial_balance_amount = Column(Float, nullable=True)
     initial_balance_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -192,3 +193,50 @@ class CategorizationRule(Base):
     __table_args__ = (
         Index('ix_rules_user_priority', 'user_id', 'priority'),
     )
+
+
+class ImportBatch(Base):
+    """CSV import batch tracking."""
+    __tablename__ = "import_batches"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    account_id = Column(String(255), ForeignKey("accounts.id"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    filename = Column(String(512), nullable=False)
+    bank_name = Column(String(255), nullable=True)  # Auto-detected: Raiffeisen, Revolut, etc.
+    transaction_count = Column(Integer, nullable=False)
+    imported_count = Column(Integer, default=0, nullable=False)
+    duplicate_count = Column(Integer, default=0, nullable=False)
+    error_count = Column(Integer, default=0, nullable=False)
+    status = Column(String(50), nullable=False, default="processing")  # processing, completed, failed, rolled_back
+    error_details = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    account = relationship("Account", backref="import_batches")
+    user = relationship("User", backref="import_batches")
+    imported_transactions = relationship("ImportedTransaction", back_populates="batch", cascade="all, delete-orphan")
+    
+    __table_args__ = (
+        Index('ix_import_batches_account', 'account_id'),
+        Index('ix_import_batches_user', 'user_id'),
+    )
+
+
+class ImportedTransaction(Base):
+    """Track imported transactions and their source batches."""
+    __tablename__ = "imported_transactions"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    batch_id = Column(String(36), ForeignKey("import_batches.id"), nullable=False, index=True)
+    transaction_id = Column(String(36), ForeignKey("transactions.id"), nullable=False, index=True)
+    original_id = Column(String(255), nullable=True)  # ID from CSV
+    row_number = Column(Integer, nullable=True)
+    is_duplicate = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    batch = relationship("ImportBatch", back_populates="imported_transactions")
+    transaction = relationship("Transaction")
+

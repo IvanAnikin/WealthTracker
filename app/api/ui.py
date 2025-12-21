@@ -50,6 +50,12 @@ async def settings_page(request: Request):
     return templates.TemplateResponse("settings.html", {"request": request})
 
 
+@router.get("/csv-import", response_class=HTMLResponse)
+async def csv_import_page(request: Request):
+    """CSV import page."""
+    return templates.TemplateResponse("csv_import.html", {"request": request})
+
+
 @router.get("/banks/connect", response_class=HTMLResponse)
 async def banks_connect_page(request: Request):
     """Bank connection page."""

@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}Import Transactions - WealthTracker{% endblock %}
+
+{% block content %}
+<div style="max-width: 1000px; margin: 0 auto;">
+    <h1 style="margin-bottom: 2rem;">📤 Import Transactions from CSV</h1>
+    
+    <!-- Step Indicator -->
+    <div style="display: flex; justify-content: space-between; margin: 2rem 0; padding: 1rem; background: #ecf0f1; border-radius: 8px;">
+        <div style="flex: 1; text-align: center; padding: 1rem;" id="step1">
+            <div style="font-size: 2rem;">1️⃣</div>
+            <div style="font-weight: 600;">Create Account</div>
+        </div>
+        <div style="flex: 1; text-align: center; padding: 1rem; opacity: 0.5;" id="step2">
+            <div style="font-size: 2rem;">2️⃣</div>
+            <div style="font-weight: 600;">Upload CSV</div>
+        </div>
+        <div style="flex: 1; text-align: center; padding: 1rem; opacity: 0.5;" id="step3">
+            <div style="font-size: 2rem;">3️⃣</div>
+            <div style="font-weight: 600;">Review & Import</div>
+        </div>
+    </div>
+    
+    <!-- Step 1: Create Account -->
+    <div class="card" id="createAccountStep">
+        <h2>Step 1: Create Manual Account</h2>
+        <p style="color: #7f8c8d;">Select the bank and account type you want to import transactions for.</p>
+        
+        <div class="form-group">
+            <label>Bank & Account Type *</label>
+            <select id="accountType" onchange="updateAccountName()" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">-- Select Account Type --</option>
+                <optgroup label="Raiffeisen">
+                    <option value="Raiffeisen main">Raiffeisen - Main Account</option>
+                    <option value="Raiffeisen sporici">Raiffeisen - Savings Account</option>
+                </optgroup>
+                <optgroup label="Revolut">
+                    <option value="Revolut CZK">Revolut - CZK (Current)</option>
+                    <option value="Revolut EUR">Revolut - EUR (Current)</option>
+                    <option value="Revolut USD">Revolut - USD (Current)</option>
+                    <option value="Revolut crypto">Revolut - Crypto</option>
+                    <option value="Revolut stock">Revolut - Stock</option>
+                </optgroup>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label>Account Name (optional)</label>
+            <input type="text" id="accountName" placeholder="e.g., My Raiffeisen Account" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        
+        <div class="form-group">
+            <label>Currency *</label>
+            <select id="currency" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="CZK" selected>CZK (Czech Koruna)</option>
+                <option value="EUR">EUR (Euro)</option>
+                <option value="USD">USD (US Dollar)</option>
+                <option value="GBP">GBP (British Pound)</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label>IBAN (optional)</label>
+            <input type="text" id="iban" placeholder="CZ1234567890123456789012" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        
+        <button class="btn" onclick="createAccount()" style="background: #27ae60; color: white;">Create Account</button>
+        <div id="createAccountMessage"></div>
+    </div>
+    
+    <!-- Step 2: Upload CSV -->
+    <div class="card" id="uploadCSVStep" style="display: none; margin-top: 2rem;">
+        <h2>Step 2: Upload CSV File</h2>
+        <p style="color: #7f8c8d;" id="accountInfo"></p>
+        
+        <div style="
+            border: 2px dashed #3498db;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            background: #ecf7ff;
+        " id="dropZone">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📁</div>
+            <p style="margin: 0.5rem 0;"><strong>Click or drag CSV file here</strong></p>
+            <p style="color: #7f8c8d; margin: 0.5rem 0; font-size: 0.9rem;">Supported: Raiffeisen, Revolut statements</p>
+            <input type="file" id="csvFile" accept=".csv" style="display: none;" onchange="handleFileSelect()">
+        </div>
+        
+        <div id="fileInfo" style="display: none; margin-top: 1rem; padding: 1rem; background: #f0f0f0; border-radius: 4px;">
+            <p><strong>File:</strong> <span id="fileName"></span></p>
+            <p><strong>Bank:</strong> <span id="detectedBank"></span></p>
+            <p><strong>Preview:</strong> <span id="transactionPreview"></span> transactions</p>
+        </div>
+        
+        <button class="btn" onclick="previewImport()" id="previewBtn" style="display: none; background: #3498db; color: white; margin-top: 1rem;">Preview Import</button>
+        <button class="btn" onclick="goBackToCreate()" style="background: #95a5a6; color: white; margin-top: 1rem; margin-left: 0.5rem;">Back</button>
+        <div id="uploadMessage"></div>
+    </div>
+    
+    <!-- Step 3: Review & Import -->
+    <div class="card" id="reviewStep" style="display: none; margin-top: 2rem;">
+        <h2>Step 3: Review & Import</h2>
+        
+        <div id="previewInfo" style="padding: 1rem; background: #ecf0f1; border-radius: 4px; margin-bottom: 1rem;">
+            <p><strong>Total transactions:</strong> <span id="totalTx">0</span></p>
+            <p><strong>New transactions:</strong> <span id="newTx" style="color: #27ae60;">0</span></p>
+            <p><strong>Duplicates:</strong> <span id="dupTx" style="color: #f39c12;">0</span></p>
+        </div>
+        
+        <div id="sampleTransactions" style="margin: 1rem 0;">
+            <h3>Sample Transactions:</h3>
+            <div id="sampleList"></div>
+        </div>
+        
+        <button class="btn" onclick="confirmImport()" style="background: #27ae60; color: white;">Confirm & Import</button>
+        <button class="btn" onclick="goBackToUpload()" style="background: #95a5a6; color: white; margin-left: 0.5rem;">Back</button>
+        <div id="importMessage"></div>
+    </div>
+    
+    <!-- Success Message -->
+    <div id="successMessage" style="display: none; margin-top: 2rem; padding: 1.5rem; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; color: #155724;">
+        <h3 style="margin-top: 0;">✅ Import Successful!</h3>
+        <p id="successText"></p>
+        <button class="btn" onclick="location.href='/ui/accounts'" style="background: #27ae60; color: white;">View Accounts</button>
+    </div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;
+let currentAccountId = null;
+
+async function fetchAPI(endpoint, options = {}) {
+    try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+            ...options,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                ...options.headers
+            }
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'API request failed');
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        throw error;
+    }
+}
+
+function updateAccountName() {
+    const type = document.getElementById('accountType').value;
+    if (!document.getElementById('accountName').value) {
+        document.getElementById('accountName').value = type;
+    }
+}
+
+async function createAccount() {
+    const type = document.getElementById('accountType').value;
+    const name = document.getElementById('accountName').value;
+    const currency = document.getElementById('currency').value;
+    const iban = document.getElementById('iban').value;
+    
+    if (!type) {
+        alert('Please select an account type');
+        return;
+    }
+    
+    try {
+        const formData = new FormData();
+        formData.append('account_type', type);
+        formData.append('account_name', name || type);
+        formData.append('currency', currency);
+        if (iban) formData.append('iban', iban);
+        
+        const response = await fetch(`${API_BASE_URL}/imports/accounts`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            body: formData
+        });
+        
+        if (!response.ok) throw new Error('Failed to create account');
+        const data = await response.json();
+        
+        currentAccountId = data.id;
+        
+        // Move to step 2
+        document.getElementById('createAccountStep').style.display = 'none';
+        document.getElementById('uploadCSVStep').style.display = 'block';
+        document.getElementById('step1').style.opacity = '0.5';
+        document.getElementById('step2').style.opacity = '1';
+        document.getElementById('accountInfo').textContent = `Account created: ${data.name} (${currency})`;
+        
+        showMessage('createAccountMessage', 'success', data.message);
+    } catch (error) {
+        showMessage('createAccountMessage', 'error', error.message);
+    }
+}
+
+function handleFileSelect() {
+    const file = document.getElementById('csvFile').files[0];
+    if (file) {
+        document.getElementById('fileName').textContent = file.name;
+        document.getElementById('fileInfo').style.display = 'block';
+        document.getElementById('previewBtn').style.display = 'inline-block';
+    }
+}
+
+function setupDragDrop() {
+    const dropZone = document.getElementById('dropZone');
+    
+    dropZone.addEventListener('click', () => document.getElementById('csvFile').click());
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.style.background = '#cce5ff';
+    });
+    dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dropZone.style.background = '#ecf7ff';
+    });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.style.background = '#ecf7ff';
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            document.getElementById('csvFile').files = files;
+            handleFileSelect();
+        }
+    });
+}
+
+async function previewImport() {
+    const file = document.getElementById('csvFile').files[0];
+    if (!file) {
+        alert('Please select a file');
+        return;
+    }
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch(`${API_BASE_URL}/imports/accounts/${currentAccountId}/preview`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            body: formData
+        });
+        
+        if (!response.ok) throw new Error('Failed to preview import');
+        const data = await response.json();
+        
+        // Show preview
+        document.getElementById('uploadCSVStep').style.display = 'none';
+        document.getElementById('reviewStep').style.display = 'block';
+        document.getElementById('step2').style.opacity = '0.5';
+        document.getElementById('step3').style.opacity = '1';
+        
+        document.getElementById('totalTx').textContent = data.total_transactions;
+        document.getElementById('newTx').textContent = data.estimated_new;
+        document.getElementById('dupTx').textContent = data.estimated_duplicates;
+        document.getElementById('detectedBank').textContent = data.bank_name;
+        document.getElementById('transactionPreview').textContent = data.total_transactions;
+        
+        const sampleHtml = data.sample_transactions.map(tx => `
+            <div style="padding: 0.5rem; border-bottom: 1px solid #ddd;">
+                <strong>${tx.booking_date.split('T')[0]}</strong> | ${tx.counterparty || tx.description}
+                <div style="text-align: right; color: ${tx.amount < 0 ? '#e74c3c' : '#27ae60'}; font-weight: bold;">
+                    ${tx.amount > 0 ? '+' : ''}${tx.amount} ${tx.currency}
+                </div>
+            </div>
+        `).join('');
+        
+        document.getElementById('sampleList').innerHTML = sampleHtml;
+        
+    } catch (error) {
+        showMessage('uploadMessage', 'error', error.message);
+    }
+}
+
+async function confirmImport() {
+    const file = document.getElementById('csvFile').files[0];
+    if (!file) {
+        alert('Please select a file');
+        return;
+    }
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch(`${API_BASE_URL}/imports/accounts/${currentAccountId}/import`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            body: formData
+        });
+        
+        if (!response.ok) throw new Error('Import failed');
+        const data = await response.json();
+        
+        // Show success
+        document.getElementById('reviewStep').style.display = 'none';
+        document.getElementById('successMessage').style.display = 'block';
+        document.getElementById('successText').textContent = data.message;
+        
+    } catch (error) {
+        showMessage('importMessage', 'error', error.message);
+    }
+}
+
+function goBackToCreate() {
+    document.getElementById('uploadCSVStep').style.display = 'none';
+    document.getElementById('createAccountStep').style.display = 'block';
+    document.getElementById('step1').style.opacity = '1';
+    document.getElementById('step2').style.opacity = '0.5';
+    document.getElementById('step3').style.opacity = '0.5';
+    currentAccountId = null;
+}
+
+function goBackToUpload() {
+    document.getElementById('reviewStep').style.display = 'none';
+    document.getElementById('uploadCSVStep').style.display = 'block';
+    document.getElementById('step2').style.opacity = '1';
+    document.getElementById('step3').style.opacity = '0.5';
+}
+
+function showMessage(elementId, type, message) {
+    const el = document.getElementById(elementId);
+    if (type === 'success') {
+        el.innerHTML = `<div style="padding: 1rem; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; color: #155724; margin-top: 1rem;">✅ ${message}</div>`;
+    } else {
+        el.innerHTML = `<div style="padding: 1rem; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; color: #721c24; margin-top: 1rem;">❌ ${message}</div>`;
+    }
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', setupDragDrop);
+</script>
