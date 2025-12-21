@@ -5,8 +5,79 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from app.models import Account, Transaction, BalanceSnapshot
+from app.models import Account, Transaction, BalanceSnapshot, Category, TransactionCategory
 from app.services.bank_provider import BankProviderClient
+
+
+def _auto_categorize_transaction(
+    db: Session,
+    transaction: Transaction,
+    user_id: str
+) -> bool:
+    """
+    Auto-categorize a transaction based on counterparty/description patterns.
+    
+    Returns:
+        True if categorized, False otherwise
+    """
+    if not transaction.counterparty and not transaction.description:
+        return False
+    
+    field_value = (transaction.counterparty or "") + " " + (transaction.description or "")
+    field_value_lower = field_value.lower()
+    
+    # Define category patterns
+    category_patterns = {
+        "Groceries": ["albert", "lidl", "tesco", "kaufland", "penny", "billa", "rewe"],
+        "Utilities": ["čez", "vodafone", "o2 czech", "telefonica", "electro", "water", "plyn"],
+        "Transport": ["shell", "bp", "aral", "motoil", "fuel", "benzin", "Praha", "Prague", "autobus", "MHD", "ticket"],
+        "Restaurants": ["lokál", "restaurant", "cafe", "coffee", "starbucks", "kfc", "mcdonalds", "pizza", "u fleků"],
+        "Entertainment": ["cinema", "kinema", "netflix", "spotify", "hulu", "museum", "theater"],
+        "Shopping": ["h&m", "zara", "primark", "decathlon", "alza", "mall"],
+        "Healthcare": ["pharmacy", "lékárna", "dentist", "doctor", "zdravi"],
+        "Subscriptions": ["netflix", "spotify", "apple", "microsoft", "adobe"],
+        "Salary": ["salary", "plat", "mzda", "abc software", "income"],
+        "Transfers": ["transfer", "sending", "převod"]
+    }
+    
+    # Try to match patterns
+    for category_name, patterns in category_patterns.items():
+        for pattern in patterns:
+            if pattern in field_value_lower:
+                # Get or create category
+                category = db.query(Category).filter(
+                    Category.name == category_name,
+                    Category.user_id == user_id
+                ).first()
+                
+                if not category:
+                    category = Category(
+                        name=category_name,
+                        user_id=user_id,
+                        color="#3498db",
+                        icon="📊"
+                    )
+                    db.add(category)
+                    db.flush()
+                
+                # Create transaction-category link
+                existing_link = db.query(TransactionCategory).filter(
+                    TransactionCategory.transaction_id == transaction.id,
+                    TransactionCategory.category_id == category.id
+                ).first()
+                
+                if not existing_link:
+                    tx_cat = TransactionCategory(
+                        transaction_id=transaction.id,
+                        category_id=category.id,
+                        is_manual=False,
+                        confidence=0.9
+                    )
+                    db.add(tx_cat)
+                
+                return True
+    
+    return False
 
 
 def generate_transaction_hash(
@@ -69,11 +140,11 @@ async def sync_account_transactions(
     
     # Process booked transactions
     for tx_data in booked_txs:
-        transactions_added += _save_transaction(db, account, tx_data, "booked")
+        transactions_added += _save_transaction(db, account, tx_data, "booked", account.user_id)
     
     # Process pending transactions
     for tx_data in pending_txs:
-        transactions_added += _save_transaction(db, account, tx_data, "pending")
+        transactions_added += _save_transaction(db, account, tx_data, "pending", account.user_id)
     
     # Update account sync timestamp
     account.last_synced_at = datetime.utcnow()
@@ -90,7 +161,8 @@ def _save_transaction(
     db: Session,
     account: Account,
     tx_data: dict,
-    status: str
+    status: str,
+    user_id: str
 ) -> int:
     """
     Save a single transaction to database with deduplication.
@@ -179,6 +251,11 @@ def _save_transaction(
     
     try:
         db.add(transaction)
+        db.flush()
+        
+        # Auto-categorize the transaction
+        _auto_categorize_transaction(db, transaction, user_id)
+        
         db.commit()
         return 1
     except IntegrityError:

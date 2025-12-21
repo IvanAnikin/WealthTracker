@@ -128,7 +128,7 @@ let categoryPeriod = '30days';
 async function fetchAPI(endpoint) {
     try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-            headers: { 'Authorization': `******` }
+            headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!response.ok) throw new Error('API request failed');
         return await response.json();
@@ -469,19 +469,27 @@ async function loadWeeklyChart() {
 
 function setCashflowPeriod(period) {
     cashflowPeriod = period;
-    document.querySelectorAll('.card:nth-of-type(2) .period-btn').forEach(btn => {
-        btn.classList.remove('active');
+    document.querySelectorAll('.card').forEach((card, index) => {
+        if (card.innerText.includes('Income vs Expenses')) {
+            card.querySelectorAll('.period-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            card.querySelectorAll(`[onclick*="${period}"]`)[0].classList.add('active');
+        }
     });
-    event.target.classList.add('active');
     loadCashflowChart(period);
 }
 
 function setCategoryPeriod(period) {
     categoryPeriod = period;
-    document.querySelectorAll('.card:nth-of-type(3) .period-btn').forEach(btn => {
-        btn.classList.remove('active');
+    document.querySelectorAll('.card').forEach((card, index) => {
+        if (card.innerText.includes('Spending by Category')) {
+            card.querySelectorAll('.period-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            card.querySelectorAll(`[onclick*="${period}"]`)[0].classList.add('active');
+        }
     });
-    event.target.classList.add('active');
     loadCategoryCharts(period);
 }
 

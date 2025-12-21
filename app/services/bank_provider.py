@@ -56,16 +56,22 @@ class BankProviderClient(ABC):
 
 
 class MockBankProvider(BankProviderClient):
-    """Mock implementation for testing."""
+    """Mock implementation for testing with Czech bank data."""
+    
+    # Test credentials (Tink sandbox)
+    TEST_CREDENTIALS = {
+        "username": "u89799094",
+        "password": "elv135"
+    }
     
     async def list_institutions(self, country: str) -> List[Dict[str, Any]]:
         """Return mock institutions."""
         return [
             {
-                "id": "MOCK_BANK_CZ",
-                "name": "Mock Bank CZ",
+                "id": f"MOCK_BANK_{country}",
+                "name": f"Mock Bank {country}",
                 "country": country,
-                "logo": "https://example.com/logo.png"
+                "logo": "https://cdn-icons-png.flaticon.com/512/2830/2830284.png"
             }
         ]
     
@@ -73,16 +79,21 @@ class MockBankProvider(BankProviderClient):
         self, 
         institution_id: str, 
         redirect_url: str,
-        reference: Optional[str] = None
+        reference: Optional[str] = None,
+        user_id_external: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Return mock requisition."""
+        """Return mock requisition with authorization_grant flow."""
+        req_id = f"req_mock_{int(datetime.utcnow().timestamp())}"
+        # Simulate authorization grant flow (no redirect needed)
         return {
-            "id": f"req_mock_{datetime.utcnow().timestamp()}",
-            "status": "created",
+            "id": req_id,
+            "status": "linked",
             "institution_id": institution_id,
-            "redirect": "https://mock-bank.example.com/auth",
             "reference": reference or "",
             "created": datetime.utcnow().isoformat(),
+            "flow_type": "authorization_grant",
+            "grant_code": f"mock_grant_{req_id}",
+            "tink_user_id": f"mock_user_{user_id_external or 'default'}"
         }
     
     async def get_requisition(self, requisition_id: str) -> Dict[str, Any]:
@@ -90,29 +101,32 @@ class MockBankProvider(BankProviderClient):
         return {
             "id": requisition_id,
             "status": "linked",
-            "accounts": [f"acc_mock_{i}" for i in range(2)],
+            "accounts": [f"acc_mock_checking_{requisition_id}", f"acc_mock_savings_{requisition_id}"],
         }
     
     async def list_accounts(self, requisition_id: str) -> List[str]:
         """Return mock account IDs."""
-        return [f"acc_mock_{i}" for i in range(2)]
+        return [f"acc_mock_checking_{requisition_id}", f"acc_mock_savings_{requisition_id}"]
     
     async def get_account_details(self, account_id: str) -> Dict[str, Any]:
         """Return mock account details."""
+        is_savings = "savings" in account_id
         return {
             "id": account_id,
-            "iban": "CZ6508000000192000145399",
+            "iban": "CZ6508000000192000145399" if not is_savings else "CZ9508000000192000145400",
             "currency": "CZK",
-            "name": "Mock Checking Account",
-            "ownerName": "John Doe",
+            "name": "Mock Savings Account" if is_savings else "Mock Checking Account",
+            "ownerName": "Jan Novák",
         }
     
     async def get_balances(self, account_id: str) -> Dict[str, Any]:
         """Return mock balances."""
+        is_savings = "savings" in account_id
+        amount = "45230.50" if is_savings else "12450.75"
         return {
             "balances": [
                 {
-                    "balanceAmount": {"amount": "1000.50", "currency": "CZK"},
+                    "balanceAmount": {"amount": amount, "currency": "CZK"},
                     "balanceType": "expected",
                     "referenceDate": datetime.utcnow().date().isoformat(),
                 }
@@ -125,24 +139,209 @@ class MockBankProvider(BankProviderClient):
         date_from: Optional[datetime] = None,
         date_to: Optional[datetime] = None
     ) -> Dict[str, Any]:
-        """Return mock transactions."""
+        """Return realistic Czech banking transactions for the past year."""
+        is_savings = "savings" in account_id
+        
+        # Generate transactions for the whole year
+        transactions = []
+        today = datetime.utcnow()
+        
+        if is_savings:
+            # Savings account: monthly deposits and interest
+            for months_ago in range(12):
+                tx_date = today - timedelta(days=30 * months_ago)
+                tx_date_iso = tx_date.date().isoformat()
+                
+                transactions.append({
+                    "transactionId": f"tx_savings_{months_ago * 2 + 1}",
+                    "bookingDate": tx_date_iso,
+                    "valueDate": tx_date_iso,
+                    "transactionAmount": {"amount": "5000.00", "currency": "CZK"},
+                    "creditorName": "Transfer from Checking",
+                    "remittanceInformationUnstructured": "Monthly savings",
+                })
+                
+                # Interest every other month
+                if months_ago % 2 == 0:
+                    transactions.append({
+                        "transactionId": f"tx_savings_{months_ago * 2 + 2}",
+                        "bookingDate": (tx_date - timedelta(days=15)).date().isoformat(),
+                        "valueDate": (tx_date - timedelta(days=15)).date().isoformat(),
+                        "transactionAmount": {"amount": "42.50", "currency": "CZK"},
+                        "creditorName": "Československá obchodní banka",
+                        "remittanceInformationUnstructured": "Interest payment",
+                    })
+        else:
+            # Checking account: varied realistic transactions
+            tx_id = 0
+            
+            # Generate daily transactions for the year
+            for day_offset in range(365, -1, -1):
+                tx_date = today - timedelta(days=day_offset)
+                tx_date_iso = tx_date.date().isoformat()
+                
+                # Monthly salary on the 1st
+                if tx_date.day == 1:
+                    transactions.append({
+                        "transactionId": f"tx_check_{tx_id}",
+                        "bookingDate": tx_date_iso,
+                        "valueDate": tx_date_iso,
+                        "transactionAmount": {"amount": "45000.00", "currency": "CZK"},
+                        "creditorName": "ABC Software s.r.o.",
+                        "remittanceInformationUnstructured": f"Salary {tx_date.strftime('%B %Y')}",
+                    })
+                    tx_id += 1
+                
+                # Random everyday transactions (70% chance)
+                if tx_id % 7 != 0:
+                    # Groceries 20%
+                    if tx_id % 5 == 0:
+                        merchants = ["Albert Hypermarket", "Lidl", "Tesco", "Kaufland", "Penny"]
+                        amounts = ["356.50", "289.00", "412.30", "195.50", "267.80"]
+                        idx = hash(str(tx_id)) % len(merchants)
+                        transactions.append({
+                            "transactionId": f"tx_check_{tx_id}",
+                            "bookingDate": tx_date_iso,
+                            "valueDate": tx_date_iso,
+                            "transactionAmount": {"amount": f"-{amounts[idx]}", "currency": "CZK"},
+                            "debtorName": merchants[idx],
+                            "remittanceInformationUnstructured": "Groceries",
+                        })
+                        tx_id += 1
+                    
+                    # Utilities (monthly)
+                    if tx_date.day == 15:
+                        utilities = [
+                            ("ČEZ Prodej", "1250.00", "Electricity bill"),
+                            ("Vodafone Czech Republic", "450.00", "Mobile phone"),
+                            ("O2 Czech Republic", "599.00", "Internet"),
+                        ]
+                        idx = (tx_date.month - 1) % len(utilities)
+                        merchant, amount, desc = utilities[idx]
+                        transactions.append({
+                            "transactionId": f"tx_check_{tx_id}",
+                            "bookingDate": tx_date_iso,
+                            "valueDate": tx_date_iso,
+                            "transactionAmount": {"amount": f"-{amount}", "currency": "CZK"},
+                            "debtorName": merchant,
+                            "remittanceInformationUnstructured": desc,
+                        })
+                        tx_id += 1
+                    
+                    # Rent (monthly on 5th)
+                    if tx_date.day == 5:
+                        transactions.append({
+                            "transactionId": f"tx_check_{tx_id}",
+                            "bookingDate": tx_date_iso,
+                            "valueDate": tx_date_iso,
+                            "transactionAmount": {"amount": "-15000.00", "currency": "CZK"},
+                            "debtorName": "Jana Dvořáková",
+                            "remittanceInformationUnstructured": f"Rent {tx_date.strftime('%B %Y')}",
+                        })
+                        tx_id += 1
+                    
+                    # Transport
+                    if tx_id % 9 == 0:
+                        transports = [
+                            ("Shell", "1450.00", "Fuel"),
+                            ("Dopravní podnik hl. m. Prahy", "550.00", "Monthly ticket"),
+                        ]
+                        idx = hash(str(tx_id)) % len(transports)
+                        merchant, amount, desc = transports[idx]
+                        transactions.append({
+                            "transactionId": f"tx_check_{tx_id}",
+                            "bookingDate": tx_date_iso,
+                            "valueDate": tx_date_iso,
+                            "transactionAmount": {"amount": f"-{amount}", "currency": "CZK"},
+                            "debtorName": merchant,
+                            "remittanceInformationUnstructured": desc,
+                        })
+                        tx_id += 1
+                    
+                    # Restaurants/Entertainment
+                    if tx_id % 12 == 0:
+                        restaurants = [
+                            ("Lokál Dlouhááá", "350.00", "Dinner"),
+                            ("Starbucks", "125.00", "Coffee"),
+                            ("U Fleků", "680.00", "Dinner with friends"),
+                            ("Cinema City", "240.00", "Movie tickets"),
+                        ]
+                        idx = hash(str(tx_id)) % len(restaurants)
+                        merchant, amount, desc = restaurants[idx]
+                        transactions.append({
+                            "transactionId": f"tx_check_{tx_id}",
+                            "bookingDate": tx_date_iso,
+                            "valueDate": tx_date_iso,
+                            "transactionAmount": {"amount": f"-{amount}", "currency": "CZK"},
+                            "debtorName": merchant,
+                            "remittanceInformationUnstructured": desc,
+                        })
+                        tx_id += 1
+                    
+                    # Subscriptions (monthly)
+                    if tx_date.day == 10:
+                        subscriptions = [
+                            ("Netflix", "199.00", "Subscription"),
+                            ("Spotify", "139.00", "Premium subscription"),
+                        ]
+                        idx = (tx_date.month - 1) % len(subscriptions)
+                        merchant, amount, desc = subscriptions[idx]
+                        transactions.append({
+                            "transactionId": f"tx_check_{tx_id}",
+                            "bookingDate": tx_date_iso,
+                            "valueDate": tx_date_iso,
+                            "transactionAmount": {"amount": f"-{amount}", "currency": "CZK"},
+                            "debtorName": merchant,
+                            "remittanceInformationUnstructured": desc,
+                        })
+                        tx_id += 1
+                    
+                    # Shopping
+                    if tx_id % 20 == 0:
+                        shops = [
+                            ("H&M", "850.00", "Clothing"),
+                            ("Alza.cz", "1299.00", "Electronics"),
+                            ("Decathlon", "599.00", "Sports equipment"),
+                        ]
+                        idx = hash(str(tx_id)) % len(shops)
+                        merchant, amount, desc = shops[idx]
+                        transactions.append({
+                            "transactionId": f"tx_check_{tx_id}",
+                            "bookingDate": tx_date_iso,
+                            "valueDate": tx_date_iso,
+                            "transactionAmount": {"amount": f"-{amount}", "currency": "CZK"},
+                            "debtorName": merchant,
+                            "remittanceInformationUnstructured": desc,
+                        })
+                        tx_id += 1
+        
         return {
             "transactions": {
-                "booked": [
+                "booked": transactions,
+                "pending": [
                     {
-                        "transactionId": f"tx_{i}",
-                        "bookingDate": (datetime.utcnow() - timedelta(days=i)).date().isoformat(),
-                        "valueDate": (datetime.utcnow() - timedelta(days=i)).date().isoformat(),
-                        "transactionAmount": {"amount": f"{(-1)**(i) * (i+1) * 100}", "currency": "CZK"},
-                        "creditorName": f"Merchant {i}" if i % 2 == 0 else None,
-                        "debtorName": f"Merchant {i}" if i % 2 == 1 else None,
-                        "remittanceInformationUnstructured": f"Payment {i}",
+                        "transactionId": "tx_pending_1",
+                        "bookingDate": datetime.utcnow().date().isoformat(),
+                        "valueDate": datetime.utcnow().date().isoformat(),
+                        "transactionAmount": {"amount": "-125.00", "currency": "CZK"},
+                        "debtorName": "Starbucks",
+                        "remittanceInformationUnstructured": "Coffee (pending)",
                     }
-                    for i in range(10)
-                ],
-                "pending": []
+                ] if not is_savings else []
             }
         }
+    
+    async def exchange_code_for_token(self, code: str) -> Dict[str, Any]:
+        """Mock token exchange."""
+        return {
+            "access_token": f"mock_token_{code}",
+            "token_type": "Bearer",
+            "expires_in": 3600
+        }
+    
+    def set_user_token(self, token: str, expires_in: Optional[int] = None) -> None:
+        """Mock token setter."""
+        pass
 
 
 class TrueLayerProvider(BankProviderClient):
@@ -807,8 +1006,16 @@ class TinkProvider(BankProviderClient):
         }
 
 
-def get_bank_provider() -> BankProviderClient:
-    """Get the configured bank provider instance."""
+def get_bank_provider(institution_id: Optional[str] = None) -> BankProviderClient:
+    """Get the configured bank provider instance.
+    
+    Args:
+        institution_id: Optional institution ID to check if it's a mock bank
+    """
+    # Always use Mock provider for mock banks
+    if institution_id and institution_id.startswith("MOCK_BANK_"):
+        return MockBankProvider()
+    
     # Use Tink if credentials are configured
     if settings.TINK_CLIENT_ID and settings.TINK_CLIENT_SECRET:
         return TinkProvider()

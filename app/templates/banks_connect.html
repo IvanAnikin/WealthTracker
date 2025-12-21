@@ -34,6 +34,9 @@
             <button onclick="selectCountry('CZ')" class="btn" style="padding: 1.5rem;">
                 🇨🇿 Czech Republic
             </button>
+            <button onclick="selectMockBank('CZ')" class="btn" style="padding: 1.5rem; background: #27ae60; color: white;">
+                🧪 Mock Bank (Testing)
+            </button>
             <button onclick="selectCountry('SK')" class="btn" style="padding: 1.5rem;">
                 🇸🇰 Slovakia
             </button>
@@ -83,6 +86,13 @@ const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:$
 let selectedCountry = '';
 let selectedBank = '';
 let institutions = [];
+
+function selectMockBank(country) {
+    selectCountry(country);
+    setTimeout(() => {
+        selectBank(`MOCK_BANK_${country}`, `Mock Bank ${country}`);
+    }, 100);
+}
 
 async function fetchAPI(endpoint, options = {}) {
     try {

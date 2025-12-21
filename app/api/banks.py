@@ -71,12 +71,24 @@ async def connect_bank(
     current_user: User = Depends(get_current_user)
 ):
     """Initiate bank connection flow."""
-    provider = get_bank_provider()
+    provider = get_bank_provider(institution_id=req_data.institution_id)
     
-    # Check if institution exists
+    # Check if institution exists, if not create it (for mock banks)
     institution = db.query(Institution).filter(Institution.id == req_data.institution_id).first()
     if not institution:
-        raise HTTPException(status_code=404, detail="Institution not found")
+        # Auto-create institution for mock banks
+        if req_data.institution_id.startswith("MOCK_BANK_"):
+            country = req_data.institution_id.replace("MOCK_BANK_", "")
+            institution = Institution(
+                id=req_data.institution_id,
+                name=f"Mock Bank {country}",
+                country=country,
+                logo_url="https://cdn-icons-png.flaticon.com/512/2830/2830284.png"
+            )
+            db.add(institution)
+            db.commit()
+        else:
+            raise HTTPException(status_code=404, detail="Institution not found")
     
     try:
         # Create requisition with provider
