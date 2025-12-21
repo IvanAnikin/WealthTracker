@@ -55,6 +55,10 @@ class Requisition(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     linked_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
+    # OAuth tokens for providers that use authorization code flow (e.g., TrueLayer)
+    access_token = Column(String(2048), nullable=True)
+    refresh_token = Column(String(2048), nullable=True)
+    token_expires_at = Column(DateTime, nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="requisitions")

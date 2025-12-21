@@ -5,7 +5,12 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
     <h1>💳 Bank Accounts</h1>
-    <a href="/ui/banks/connect" class="btn btn-success">➕ Connect New Bank</a>
+    <div style="display: flex; gap: 0.5rem;">
+        <button onclick="disconnectAllBanks()" class="btn" style="background: #e74c3c; color: white;">
+            🗑️ Remove All Connections
+        </button>
+        <a href="/ui/banks/connect" class="btn btn-success">➕ Connect New Bank</a>
+    </div>
 </div>
 
 <!-- Account Summary -->
@@ -53,7 +58,7 @@ async function fetchAPI(endpoint, options = {}) {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             ...options,
             headers: {
-                'Authorization': `******`,
+                'Authorization': `Bearer ${token}`,
                 ...options.headers
             }
         });
@@ -255,6 +260,26 @@ async function disconnectBank(requisitionId) {
     alert('Bank disconnected successfully!');
     loadConnections();
     loadAccounts();
+}
+
+async function disconnectAllBanks() {
+    const confirmed = confirm('⚠️ WARNING: This will remove ALL bank connections and delete ALL accounts!\n\nYour transactions will remain, but you will need to reconnect all banks.\n\nAre you sure?');
+    if (!confirmed) return;
+    
+    const doubleCheck = confirm('This action cannot be undone. Are you absolutely sure?');
+    if (!doubleCheck) return;
+    
+    try {
+        const result = await fetchAPI('/banks/requisitions', {
+            method: 'DELETE'
+        });
+        
+        alert(result.message || 'All connections removed successfully!');
+        loadConnections();
+        loadAccounts();
+    } catch (error) {
+        alert('Failed to remove connections: ' + error.message);
+    }
 }
 
 // Initialize

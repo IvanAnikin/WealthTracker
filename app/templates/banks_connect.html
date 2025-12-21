@@ -43,8 +43,8 @@
             <button onclick="selectCountry('DE')" class="btn" style="padding: 1.5rem;">
                 🇩🇪 Germany
             </button>
-            <button onclick="selectCountry('UK')" class="btn" style="padding: 1.5rem;">
-                🇬🇧 United Kingdom
+            <button onclick="selectCountry('GB')" class="btn" style="padding: 1.5rem;">
+                🇬🇧 United Kingdom (GB)
             </button>
             <button onclick="selectCountry('FR')" class="btn" style="padding: 1.5rem;">
                 🇫🇷 France
@@ -121,11 +121,14 @@ function displayBanks(banks) {
     if (!banks || banks.length === 0) {
         document.getElementById('banksList').innerHTML = `
             <div class="alert alert-error">
-                No banks available for this country. Please try another country or use the mock bank for testing.
+                No banks available for this country. Try United Kingdom (GB) in sandbox, or enable providers for your TrueLayer app.
             </div>
-            <button onclick="selectBank('MOCK_BANK_${selectedCountry}', 'Mock Bank ${selectedCountry}')" class="btn btn-success" style="margin-top: 1rem;">
-                Use Mock Bank (for testing)
-            </button>
+            <div style="display:flex; gap:0.5rem; margin-top: 0.5rem;">
+                <button onclick="selectCountry('GB')" class="btn">Try GB Providers</button>
+                <button onclick="selectBank('MOCK_BANK_${selectedCountry}', 'Mock Bank ${selectedCountry}')" class="btn btn-success">
+                    Use Mock Bank (testing)
+                </button>
+            </div>
         `;
         return;
     }
@@ -197,13 +200,13 @@ async function selectBank(bankId, bankName) {
 }
 
 async function initiateConnection() {
-    const redirectUrl = `${window.location.origin}/ui/banks/callback`;
+    const redirectUrl = `${window.location.origin}/banks/connect/callback`;
     
     document.getElementById('authContent').innerHTML = `
         <div style="text-align: center; padding: 2rem;">
             <div style="font-size: 3rem; margin-bottom: 1rem;">⏳</div>
             <h3>Creating connection...</h3>
-            <p style="color: #7f8c8d;">Please wait while we prepare your bank connection.</p>
+            <p style="color: #7f8c8d;">Please wait while we connect to your bank using Tink sandbox.</p>
         </div>
     `;
     
@@ -216,6 +219,48 @@ async function initiateConnection() {
         })
     });
     
+    // Check for errors
+    if (result && result.status === 'error') {
+        document.getElementById('authContent').innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">❌</div>
+                <h3 style="margin-bottom: 1rem; color: #e74c3c;">Connection Failed</h3>
+                <p style="color: #7f8c8d; margin-bottom: 1rem;">
+                    ${result.message || 'Failed to connect to bank'}
+                </p>
+                <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin: 1rem 0; text-align: left;">
+                    <strong>Error details:</strong><br>
+                    <code style="font-size: 0.85rem; color: #e74c3c;">${result.error || 'Unknown error'}</code>
+                </div>
+                <button onclick="window.location.reload()" class="btn" style="margin-top: 1rem;">
+                    Try Again
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    // Check if connection completed immediately (Tink sandbox authorization grant flow)
+    if (result && result.flow_type === 'authorization_grant' && result.status === 'linked') {
+        document.getElementById('authContent').innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
+                <h3 style="margin-bottom: 1rem;">Bank Connected Successfully!</h3>
+                <p style="color: #7f8c8d; margin-bottom: 1rem;">
+                    Your bank account has been connected using Tink sandbox test data.
+                </p>
+                <p style="color: #95a5a6; font-size: 0.9rem; margin-bottom: 2rem;">
+                    Note: This is a sandbox connection with demo data. For production, real bank authentication would be used.
+                </p>
+                <a href="/ui/accounts" class="btn btn-success" style="font-size: 1.1rem; padding: 1rem 2rem;">
+                    View Your Accounts →
+                </a>
+            </div>
+        `;
+        return;
+    }
+    
+    // Legacy flow with redirect (GoCardless, TrueLayer, or production Tink Link)
     if (result && result.redirect_url) {
         document.getElementById('authContent').innerHTML = `
             <div style="text-align: center; padding: 2rem;">
@@ -232,16 +277,19 @@ async function initiateConnection() {
                 </p>
             </div>
         `;
-    } else {
-        document.getElementById('authContent').innerHTML = `
-            <div class="alert alert-error">
-                <strong>Connection failed!</strong> Please try again or contact support.
-            </div>
-            <button onclick="window.location.href='/ui/accounts'" class="btn" style="margin-top: 1rem;">
-                Back to Accounts
-            </button>
-        `;
+        return;
     }
+    
+    // Fallback: something went wrong
+    document.getElementById('authContent').innerHTML = `
+        <div class="alert alert-error">
+            <strong>Connection failed!</strong> Please try again or contact support.
+            ${result ? `<br><small>Status: ${result.status || 'unknown'}</small>` : ''}
+        </div>
+        <button onclick="window.location.reload()" class="btn" style="margin-top: 1rem;">
+            Try Again
+        </button>
+    `;
 }
 
 function goBackToCountry() {

@@ -80,6 +80,7 @@ GoCardless Bank Account Data API (Open Banking)
 6. **Run the application**
    ```bash
    uvicorn app.main:app --reload
+   ./venv/bin/python -m uvicorn app.main:app --reload --port 8081
    ```
 
 7. **Access the application**

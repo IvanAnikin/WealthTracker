@@ -16,10 +16,21 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite:///./wealth_tracker.db"
     
-    # Open Banking Provider
+    # Open Banking Provider - TrueLayer
+    TRUELAYER_CLIENT_ID: str = ""
+    TRUELAYER_CLIENT_SECRET: str = ""
+    TRUELAYER_BASE_URL: str = "https://api.truelayer.com"
+    TRUELAYER_AUTH_URL: str = "https://auth.truelayer.com"
+    
+    # Open Banking Provider - GoCardless (Legacy)
     GOCARDLESS_SECRET_ID: str = ""
     GOCARDLESS_SECRET_KEY: str = ""
     GOCARDLESS_BASE_URL: str = "https://bankaccountdata.gocardless.com/api/v2"
+    
+    # Open Banking Provider - Tink
+    TINK_CLIENT_ID: str = ""
+    TINK_CLIENT_SECRET: str = ""
+    TINK_API_URL: str = "https://api.tink.com"
     
     # Session
     SESSION_SECRET_KEY: str
