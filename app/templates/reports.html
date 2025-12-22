@@ -37,6 +37,27 @@
         right: 20px;
         z-index: 1000;
     }
+
+    /* Currency Selector */
+    .currency-toggle {
+        position: fixed;
+        top: 70px;
+        right: 20px;
+        z-index: 1000;
+    }
+
+    .currency-select {
+        background: var(--card-bg);
+        color: var(--text-color);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        padding: 0.4rem 0.8rem;
+        outline: none;
+        transition: all 0.3s;
+    }
+    .currency-select:hover {
+        background: var(--hover-bg);
+    }
     
     .toggle-switch {
         display: flex;
@@ -458,6 +479,21 @@
     </label>
 </div>
 
+<!-- Currency Selector -->
+<div class="currency-toggle">
+    <label class="toggle-switch" style="gap: 0.3rem;">
+        <span style="font-size: 0.9rem;">💱</span>
+        <select id="currencySelect" class="currency-select" onchange="onCurrencyChange()">
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="CZK">CZK</option>
+            <option value="GBP">GBP</option>
+            <option value="PLN">PLN</option>
+        </select>
+    </label>
+    <small style="display:block; text-align:right; color: var(--text-color); margin-top:4px;">Display currency</small>
+ </div>
+
 <!-- Loading Overlay -->
 <div class="loading-overlay" id="loadingOverlay">
     <div class="loading-popup">
@@ -477,12 +513,12 @@
 <!-- Filter Toggles -->
 <div class="filter-toggles">
     <label class="filter-toggle">
-        <input type="checkbox" id="excludeInvestmentToggle" class="toggle-checkbox" onchange="updateChartsFromInputs()">
+        <input type="checkbox" id="excludeInvestmentToggle" class="toggle-checkbox" onchange="updateChartsFromInputs()" checked>
         <span class="toggle-icon">🏦</span>
         <span class="toggle-label">Exclude Investment Accounts</span>
     </label>
     <label class="filter-toggle">
-        <input type="checkbox" id="excludeInternalTransfersToggle" class="toggle-checkbox" onchange="updateChartsFromInputs()">
+        <input type="checkbox" id="excludeInternalTransfersToggle" class="toggle-checkbox" onchange="updateChartsFromInputs()" checked>
         <span class="toggle-icon">🔄</span>
         <span class="toggle-label">Hide Internal Transfers</span>
     </label>
@@ -799,9 +835,11 @@ function buildFilterParams() {
     
     const excludeInvestment = document.getElementById('excludeInvestmentToggle')?.checked || false;
     const excludeInternal = document.getElementById('excludeInternalTransfersToggle')?.checked || false;
+    const currency = document.getElementById('currencySelect')?.value || (localStorage.getItem('reportCurrency') || 'USD');
     
     if (excludeInvestment) params.append('exclude_investment', 'true');
     if (excludeInternal) params.append('exclude_internal_transfers', 'true');
+    if (currency) params.append('currency', currency);
     
     return params.toString();
 }
@@ -840,6 +878,21 @@ function initializeDarkMode() {
     
     // Apply chart colors after setting theme
     updateChartColors();
+}
+
+function initializeCurrency() {
+    const select = document.getElementById('currencySelect');
+    const saved = localStorage.getItem('reportCurrency') || 'USD';
+    if (select) {
+        select.value = saved;
+    }
+}
+
+function onCurrencyChange() {
+    const select = document.getElementById('currencySelect');
+    const cur = select?.value || 'USD';
+    localStorage.setItem('reportCurrency', cur);
+    loadAllCharts();
 }
 
 function updateChartColors() {
@@ -930,13 +983,18 @@ function hideLoading() {
 
 
 async function loadSummaryStats() {
-    const balances = await fetchAPI('/transactions/balances/net');
+    const selectedCurrency = document.getElementById('currencySelect')?.value || localStorage.getItem('reportCurrency') || 'USD';
+    const balances = await fetchAPI(`/transactions/balances/net?currency=${encodeURIComponent(selectedCurrency)}`);
     if (balances && balances.balances_by_currency) {
-        const currencies = Object.keys(balances.balances_by_currency);
-        if (currencies.length > 0) {
-            const balance = balances.balances_by_currency[currencies[0]];
-            document.getElementById('currentBalance').textContent = 
-                `${balance.toFixed(2)} ${currencies[0]}`;
+        const displayCur = balances.currency || selectedCurrency;
+        if (balances.total_in_currency !== undefined) {
+            document.getElementById('currentBalance').textContent = `${balances.total_in_currency.toFixed(2)} ${displayCur}`;
+        } else {
+            const currencies = Object.keys(balances.balances_by_currency);
+            if (currencies.length > 0) {
+                const balance = balances.balances_by_currency[currencies[0]];
+                document.getElementById('currentBalance').textContent = `${balance.toFixed(2)} ${currencies[0]}`;
+            }
         }
     }
     
@@ -947,12 +1005,13 @@ async function loadSummaryStats() {
     const separator = filterParams ? '&' : '';
     const stats = await fetchAPI(`/reports/statistics?start_date=${startStr}T00:00:00Z&end_date=${endStr}T23:59:59Z${separator}${filterParams}`);
     if (stats) {
-        document.getElementById('periodIncome').textContent = `+${Math.abs(stats.total_income).toFixed(2)}`;
-        document.getElementById('periodExpenses').textContent = Math.abs(stats.total_expenses).toFixed(2);
+        const currency = stats.currency || (document.getElementById('currencySelect')?.value || 'USD');
+        document.getElementById('periodIncome').textContent = `+${Math.abs(stats.total_income).toFixed(2)} ${currency}`;
+        document.getElementById('periodExpenses').textContent = `${Math.abs(stats.total_expenses).toFixed(2)} ${currency}`;
         
         const net = stats.net;
         const netEl = document.getElementById('periodNet');
-        netEl.textContent = (net >= 0 ? '+' : '') + net.toFixed(2);
+        netEl.textContent = (net >= 0 ? '+' : '') + net.toFixed(2) + ` ${currency}`;
         netEl.className = 'value ' + (net >= 0 ? 'positive' : 'negative');
     }
 }
@@ -1264,9 +1323,25 @@ async function loadAllCharts() {
 }
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initializeDarkMode();
+    initializeCurrency();
     initializeDateRange();
+    
+    // Detect internal transfers on page load
+    try {
+        await fetch('/reports/detect-internal-transfers', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        console.log('Internal transfers detected on page load');
+    } catch (error) {
+        console.warn('Failed to detect internal transfers:', error);
+    }
+    
     loadAllCharts();
 });
 </script>

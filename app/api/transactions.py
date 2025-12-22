@@ -135,13 +135,19 @@ def get_total_balance(
     if not as_of_date:
         as_of_date = datetime.utcnow()
     
-    balances = get_net_balance(db, current_user.id, as_of_date, currency)
-    
-    return {
+    balances, converted_total, target_currency = get_net_balance(db, current_user.id, as_of_date, currency)
+    response = {
         "as_of_date": as_of_date.isoformat(),
         "balances_by_currency": balances,
-        "total": sum(balances.values()) if len(balances) == 1 else None
     }
+
+    if converted_total is not None and target_currency:
+        response["total_in_currency"] = round(converted_total, 2)
+        response["currency"] = target_currency
+    else:
+        response["total"] = sum(balances.values()) if len(balances) == 1 else None
+    
+    return response
 
 
 @router.patch("/{transaction_id}/internal-transfer")

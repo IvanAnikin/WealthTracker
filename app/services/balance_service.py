@@ -95,8 +95,8 @@ def get_net_balance(
     db: Session,
     user_id: str,
     as_of_date: datetime,
-    currency_filter: Optional[str] = None
-) -> dict[str, float]:
+    target_currency: Optional[str] = None
+) -> tuple[dict[str, float], Optional[float], Optional[str]]:
     """
     Get total net balance across all user accounts.
     
@@ -109,11 +109,7 @@ def get_net_balance(
     Returns:
         Dictionary with balances per currency
     """
-    query = db.query(Account).filter(Account.user_id == user_id)
-    if currency_filter:
-        query = query.filter(Account.currency == currency_filter)
-    
-    accounts = query.all()
+    accounts = db.query(Account).filter(Account.user_id == user_id).all()
     balances_by_currency = {}
     
     for account in accounts:
@@ -121,8 +117,17 @@ def get_net_balance(
         if balance is not None:
             currency = account.currency
             balances_by_currency[currency] = balances_by_currency.get(currency, 0.0) + balance
-    
-    return balances_by_currency
+
+    converted_total = None
+    target = (target_currency or '').upper() or None
+    if target:
+        from app.services.currency_service import get_rate_map
+
+        rate_map = get_rate_map(balances_by_currency.keys(), target)
+        converted_total = sum((balances_by_currency[cur] or 0.0) * rate_map.get(cur.upper(), 1.0)
+                               for cur in balances_by_currency)
+
+    return balances_by_currency, converted_total, target
 
 
 def detect_and_mark_internal_transfers(db: Session, user_id: str) -> int:
@@ -140,6 +145,47 @@ def detect_and_mark_internal_transfers(db: Session, user_id: str) -> int:
     """
     from datetime import timedelta
     
+    # Bulk mark obvious FX/internal wallet conversions up front (single-table scan)
+    simple_internal_patterns = [
+        'exchanged to ',
+        'revolut bank uab',
+        'revolut digital assets',
+        'transfer to revolut digital assets',
+        'transfer to my account',
+        'konverze'
+    ]
+    updated_count = 0
+
+    base_query = db.query(Transaction).join(Account).filter(Account.user_id == user_id)
+    conversions = base_query.filter(
+        Transaction.is_internal_transfer == False,
+        Transaction.description.ilike('%exchanged to %')
+    ).all()
+    for tx in conversions:
+        # Keep cash withdrawals as expenses
+        desc_lower = (tx.description or '').lower()
+        if 'cash withdrawal' in desc_lower:
+            continue
+        tx.is_internal_transfer = True
+        updated_count += 1
+
+    other_simple = base_query.filter(
+        Transaction.is_internal_transfer == False,
+        (
+            Transaction.description.ilike('%revolut bank uab%') |
+            Transaction.description.ilike('%revolut digital assets%') |
+            Transaction.description.ilike('%transfer to revolut digital assets%') |
+            Transaction.description.ilike('%transfer to my account%') |
+            Transaction.description.ilike('%konverze%')
+        )
+    ).all()
+    for tx in other_simple:
+        desc_lower = (tx.description or '').lower()
+        if 'cash withdrawal' in desc_lower:
+            continue
+        tx.is_internal_transfer = True
+        updated_count += 1
+
     # Get all user accounts
     user_accounts = db.query(Account).filter(Account.user_id == user_id).all()
     account_ids = {acc.id for acc in user_accounts}
@@ -149,14 +195,28 @@ def detect_and_mark_internal_transfers(db: Session, user_id: str) -> int:
         Transaction.account_id.in_(account_ids)
     ).order_by(Transaction.booking_date).all()
     
-    updated_count = 0
     processed_pairs = set()
     
-    # Patterns that indicate internal transfers
+    # Patterns that indicate internal transfers or investment/wallet moves
     internal_patterns = [
         'anikin', 'ivan', 'sergejev',  # User's name variations
-        'topup', 'top-up', 'top up',  # Revolut topups
+        'topup', 'top-up', 'top up',   # Revolut topups
+        'revolut',
+        'revolut bank uab',
+        'revolut digital assets',
+        'konverze',                    # FX conversion lines
+        'transfer to my account',
+        'transfer to revolut',
+        'exchanged to ',               # FX conversions wording
+        'xtb'
     ]
+
+    account_identifiers = set()
+    for acc in user_accounts:
+        if acc.iban:
+            account_identifiers.add(acc.iban.replace(' ', '').lower())
+        if acc.name:
+            account_identifiers.add(acc.name.lower())
     
     revolut_account_ids = {acc.id for acc in user_accounts if acc.name and 'revolut' in acc.name.lower()}
     raiffeisen_account_ids = {acc.id for acc in user_accounts if acc.name and 'raiffeisen' in acc.name.lower()}
@@ -168,15 +228,25 @@ def detect_and_mark_internal_transfers(db: Session, user_id: str) -> int:
         is_internal = False
         matching_tx = None
         
-        # Pattern 1: Check if description/counterparty contains user's name
+        # Pattern 1: Check if description/counterparty contains user's name or own account identifiers
         description_lower = (tx.description or '').lower()
         counterparty_lower = (tx.counterparty or '').lower()
         
         if any(pattern in description_lower or pattern in counterparty_lower for pattern in internal_patterns):
-            # If it's a transfer with user's own name, it's internal
-            if 'anikin' in description_lower or 'anikin' in counterparty_lower:
-                is_internal = True
+            is_internal = True
+
+        if not is_internal and any(identifier in description_lower or identifier in counterparty_lower for identifier in account_identifiers):
+            is_internal = True
         
+        # Explicit FX conversions like "Exchanged to EUR/USD" should be internal unless they are cash withdrawals
+        if not is_internal and 'exchanged to ' in description_lower:
+            if 'cash withdrawal' not in description_lower:
+                is_internal = True
+
+        # Cash withdrawals should stay as expenses; do not mark internal
+        if description_lower.startswith('cash withdrawal'):
+            is_internal = False
+
         # Pattern 2: Revolut topups (check if it's a topup transaction)
         if tx.account_id in revolut_account_ids and tx.amount > 0:
             if 'topup' in description_lower or 'top-up' in description_lower or 'top up' in description_lower:

@@ -25,6 +25,7 @@ def cashflow_report(
     account_id: Optional[str] = Query(None),
     exclude_investment: bool = Query(False),
     exclude_internal_transfers: bool = Query(False),
+    currency: Optional[str] = Query('USD'),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -37,7 +38,8 @@ def cashflow_report(
     data = get_monthly_cashflow(
         db, current_user.id, start_date, end_date, account_id,
         exclude_investment=exclude_investment,
-        exclude_internal_transfers=exclude_internal_transfers
+        exclude_internal_transfers=exclude_internal_transfers,
+        currency=currency
     )
     return [CashflowReport(**item) for item in data]
 
@@ -49,6 +51,7 @@ def category_report(
     account_id: Optional[str] = Query(None),
     exclude_investment: bool = Query(False),
     exclude_internal_transfers: bool = Query(False),
+    currency: Optional[str] = Query('USD'),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -61,7 +64,8 @@ def category_report(
     data = get_category_breakdown(
         db, current_user.id, start_date, end_date, account_id,
         exclude_investment=exclude_investment,
-        exclude_internal_transfers=exclude_internal_transfers
+        exclude_internal_transfers=exclude_internal_transfers,
+        currency=currency
     )
     return [CategoryBreakdown(**item) for item in data]
 
@@ -70,11 +74,17 @@ def category_report(
 def spending_trends(
     category_id: Optional[str] = Query(None),
     months: int = Query(6, ge=1, le=24),
+    exclude_investment: bool = Query(False),
+    exclude_internal_transfers: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Get spending trends over time."""
-    data = get_spending_trends(db, current_user.id, category_id, months)
+    data = get_spending_trends(
+        db, current_user.id, category_id, months,
+        exclude_investment=exclude_investment,
+        exclude_internal_transfers=exclude_internal_transfers
+    )
     return {"trends": data}
 
 
@@ -98,6 +108,7 @@ def transaction_stats(
     end_date: Optional[datetime] = Query(None),
     exclude_investment: bool = Query(False),
     exclude_internal_transfers: bool = Query(False),
+    currency: Optional[str] = Query('USD'),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -110,7 +121,8 @@ def transaction_stats(
     stats = get_transaction_statistics(
         db, current_user.id, start_date, end_date,
         exclude_investment=exclude_investment,
-        exclude_internal_transfers=exclude_internal_transfers
+        exclude_internal_transfers=exclude_internal_transfers,
+        currency=currency
     )
     return {
         "period": {
