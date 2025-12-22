@@ -244,7 +244,8 @@ class RevolutCryptoParser(CSVParser):
     
     def detect(self, file_content: str) -> bool:
         """Detect Revolut crypto format."""
-        return "Symbol,Type,Quantity,Price,Value" in file_content
+        return ("Date acquired,Date sold,Symbol" in file_content or 
+                "Symbol,Type,Quantity,Price,Value" in file_content)
     
     def parse(self, file_content: str) -> List[CSVTransaction]:
         """Parse Revolut crypto CSV."""
@@ -258,55 +259,116 @@ class RevolutCryptoParser(CSVParser):
         
         reader = csv.DictReader(io.StringIO('\n'.join(lines)), delimiter=',')
         
+        # Detect format by checking first row
+        first_row = None
+        try:
+            first_row = next(csv.DictReader(io.StringIO('\n'.join(lines)), delimiter=','))
+        except:
+            return transactions
+        
+        # New format: Date acquired, Date sold, Symbol, Quantity, Cost basis, Gross proceeds, Gross PnL, Fees, Net PnL, Currency
+        is_new_format = 'Date acquired' in first_row and 'Date sold' in first_row
+        
+        # Re-create reader
+        reader = csv.DictReader(io.StringIO('\n'.join(lines)), delimiter=',')
+        
         for row in reader:
             try:
-                symbol = row.get('Symbol', '').strip()
-                trans_type = row.get('Type', '').strip().lower()
-                date_str = row.get('Date', '').strip()
-                
-                # Parse date (various formats possible)
-                try:
-                    booking_date = datetime.strptime(date_str, "%b %d, %Y, %I:%M:%S %p")
-                except:
+                if is_new_format:
+                    # New format parsing
+                    date_sold_str = row.get('Date sold', '').strip()
+                    symbol = row.get('Symbol', '').strip()
+                    
+                    # Parse date
                     try:
-                        booking_date = datetime.fromisoformat(date_str)
+                        booking_date = datetime.strptime(date_sold_str, "%Y-%m-%d")
                     except:
                         continue
+                    
+                    # Net PnL is the actual profit/loss
+                    net_pnl_str = row.get('Net PnL', '0').strip()
+                    amount = self.parse_iso_decimal(net_pnl_str)
+                    
+                    # Parse fees
+                    fees_str = row.get('Fees', '0').strip()
+                    fees = self.parse_iso_decimal(fees_str)
+                    
+                    # Get currency from CSV
+                    currency = row.get('Currency', 'USD').strip()
+                    
+                    quantity = row.get('Quantity', '0').strip()
+                    cost_basis = row.get('Cost basis', '0').strip()
+                    gross_proceeds = row.get('Gross proceeds', '0').strip()
+                    
+                    description = f"SELL {quantity} {symbol} (Cost: {cost_basis}, Proceeds: {gross_proceeds}, PnL: {net_pnl_str})"
+                    
+                    transaction = CSVTransaction(
+                        booking_date=booking_date,
+                        amount=amount,
+                        currency=currency,
+                        description=description,
+                        counterparty=f"{symbol} (Crypto)",
+                        transaction_type='investment',
+                        fees=fees,
+                        metadata={
+                            'symbol': symbol,
+                            'action': 'sell',
+                            'quantity': quantity,
+                            'cost_basis': cost_basis,
+                            'gross_proceeds': gross_proceeds,
+                            'gross_pnl': row.get('Gross PnL', '').strip(),
+                        }
+                    )
+                else:
+                    # Old format parsing
+                    symbol = row.get('Symbol', '').strip()
+                    trans_type = row.get('Type', '').strip().lower()
+                    date_str = row.get('Date', '').strip()
+                    
+                    # Parse date (various formats possible)
+                    try:
+                        booking_date = datetime.strptime(date_str, "%b %d, %Y, %I:%M:%S %p")
+                    except:
+                        try:
+                            booking_date = datetime.fromisoformat(date_str)
+                        except:
+                            continue
+                    
+                    # Parse value (with potential "CZK" suffix)
+                    value_str = row.get('Value', '0').strip()
+                    # Remove currency suffix and commas
+                    value_str = value_str.replace(',', '.').split()[0]
+                    amount = self.parse_iso_decimal(value_str)
+                    
+                    if amount == 0:
+                        continue
+                    
+                    # Parse fees
+                    fees_str = row.get('Fees', '0').strip()
+                    fees_str = fees_str.replace(',', '.').split()[0]
+                    fees = self.parse_iso_decimal(fees_str)
+                    
+                    quantity = row.get('Quantity', '0').strip()
+                    price = row.get('Price', '0').strip()
+                    
+                    description = f"{trans_type.upper()} {quantity} {symbol} @ {price}"
+                    
+                    transaction = CSVTransaction(
+                        booking_date=booking_date,
+                        amount=amount,
+                        currency='CZK',  # Crypto values in CZK for old format
+                        description=description,
+                        counterparty=f"{symbol} (Crypto)",
+                        transaction_type='investment',
+                        fees=fees,
+                        metadata={
+                            'symbol': symbol,
+                            'action': trans_type,
+                            'quantity': quantity,
+                            'price': price,
+                        }
+                    )
                 
-                # Parse value (with potential "CZK" suffix)
-                value_str = row.get('Value', '0').strip()
-                # Remove currency suffix and commas
-                value_str = value_str.replace(',', '.').split()[0]
-                amount = self.parse_iso_decimal(value_str)
-                
-                if amount == 0:
-                    continue
-                
-                # Parse fees
-                fees_str = row.get('Fees', '0').strip()
-                fees_str = fees_str.replace(',', '.').split()[0]
-                fees = self.parse_iso_decimal(fees_str)
-                
-                quantity = row.get('Quantity', '0').strip()
-                price = row.get('Price', '0').strip()
-                
-                description = f"{trans_type.upper()} {quantity} {symbol} @ {price}"
-                
-                transaction = CSVTransaction(
-                    booking_date=booking_date,
-                    amount=amount,
-                    currency='CZK',  # Crypto values in CZK
-                    description=description,
-                    counterparty=f"{symbol} (Crypto)",
-                    transaction_type='investment',
-                    fees=fees,
-                    metadata={
-                        'symbol': symbol,
-                        'action': trans_type,
-                        'quantity': quantity,
-                        'price': price,
-                    }
-                )
                 transactions.append(transaction)
             except Exception as e:
                 print(f"Error parsing Revolut crypto row: {e}")
@@ -320,143 +382,227 @@ class RevolutStockParser(CSVParser):
     
     def detect(self, file_content: str) -> bool:
         """Detect Revolut stock format."""
-        return "Date acquired,Date sold,Symbol,Security name" in file_content
+        return ("Date,Ticker,Type,Quantity,Price per share" in file_content or
+                "Date acquired,Date sold,Symbol,Security name" in file_content)
     
     def parse(self, file_content: str) -> List[CSVTransaction]:
-        """Parse Revolut stock CSV with multiple sections."""
+        """Parse Revolut stock CSV with multiple formats."""
         transactions = []
         
         lines = file_content.split('\n')
+        lines = [l for l in lines if l.strip()]
         
-        # Parse "Income from Sells" section
-        try:
-            sells_idx = next(i for i, l in enumerate(lines) if "Income from Sells" in l)
-            header_idx = next(i for i in range(sells_idx, len(lines)) if "Date acquired" in lines[i])
+        if not lines:
+            return transactions
+        
+        # Detect format
+        header = lines[0] if lines else ""
+        is_new_format = "Date,Ticker,Type,Quantity,Price per share" in header
+        
+        if is_new_format:
+            # New format: Date, Ticker, Type, Quantity, Price per share, Total Amount, Currency, FX Rate
+            reader = csv.DictReader(io.StringIO('\n'.join(lines)), delimiter=',')
             
-            sell_lines = []
-            for i in range(header_idx + 1, len(lines)):
-                if lines[i].strip() == "" or "Other income" in lines[i]:
-                    break
-                if lines[i].strip():
-                    sell_lines.append(lines[i])
-            
-            if sell_lines:
-                reader = csv.DictReader(
-                    io.StringIO('\n'.join([lines[header_idx]] + sell_lines)),
-                    delimiter=','
-                )
-                
-                for row in reader:
+            for row in reader:
+                try:
+                    date_str = row.get('Date', '').strip()
+                    ticker = row.get('Ticker', '').strip()
+                    trans_type = row.get('Type', '').strip().upper()
+                    
+                    # Parse date (ISO format with Z timezone)
                     try:
-                        date_sold_str = row.get('Date sold', '').strip()
-                        symbol = row.get('Symbol', '').strip()
-                        security_name = row.get('Security name', '').strip()
-                        
-                        try:
-                            booking_date = datetime.strptime(date_sold_str, "%Y-%m-%d")
-                        except:
-                            continue
-                        
-                        # Gross proceeds
-                        proceeds_str = row.get('Gross proceeds', '0').strip()
-                        amount = self.parse_iso_decimal(proceeds_str)
-                        
-                        if amount == 0:
-                            continue
-                        
+                        booking_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    except:
+                        continue
+                    
+                    # Total Amount includes currency prefix
+                    total_amount_str = row.get('Total Amount', '0').strip()
+                    # Extract currency and amount (e.g., "USD 100" or "EUR 49.99")
+                    parts = total_amount_str.split()
+                    if len(parts) >= 2:
+                        currency = parts[0]
+                        amount_str = parts[1]
+                    else:
                         currency = row.get('Currency', 'USD').strip()
-                        quantity = row.get('Quantity', '0').strip()
-                        
-                        description = f"SELL {quantity} x {symbol} ({security_name})"
-                        
-                        transaction = CSVTransaction(
-                            booking_date=booking_date,
-                            amount=amount,
-                            currency=currency,
-                            description=description,
-                            counterparty=f"{symbol} (Stock)",
-                            transaction_type='investment',
-                            metadata={
-                                'symbol': symbol,
-                                'security_name': security_name,
-                                'action': 'sell',
-                                'quantity': quantity,
-                            }
-                        )
-                        transactions.append(transaction)
-                    except Exception as e:
-                        print(f"Error parsing stock sell row: {e}")
-                        continue
-        except:
-            pass
-        
-        # Parse "Other income & fees" section (dividends)
-        try:
-            income_idx = next(i for i, l in enumerate(lines) if "Other income & fees" in l)
-            header_idx = next(i for i in range(income_idx, len(lines)) if "Date,Symbol" in lines[i])
-            
-            income_lines = []
-            for i in range(header_idx + 1, len(lines)):
-                if lines[i].strip() == "":
-                    break
-                if lines[i].strip():
-                    income_lines.append(lines[i])
-            
-            if income_lines:
-                reader = csv.DictReader(
-                    io.StringIO('\n'.join([lines[header_idx]] + income_lines)),
-                    delimiter=','
-                )
+                        amount_str = total_amount_str
+                    
+                    amount = self.parse_iso_decimal(amount_str)
+                    
+                    quantity = row.get('Quantity', '0').strip()
+                    price = row.get('Price per share', '0').strip()
+                    
+                    # Build description based on transaction type
+                    if 'CASH TOP-UP' in trans_type or 'CASH WITHDRAWAL' in trans_type:
+                        description = trans_type
+                        counterparty = "Cash Account"
+                        transaction_type = 'transfer'
+                    elif 'BUY' in trans_type:
+                        description = f"BUY {quantity} x {ticker} @ {price}"
+                        counterparty = f"{ticker} (Stock)"
+                        transaction_type = 'investment'
+                    elif 'SELL' in trans_type:
+                        description = f"SELL {quantity} x {ticker} @ {price}"
+                        counterparty = f"{ticker} (Stock)"
+                        transaction_type = 'investment'
+                    elif 'DIVIDEND' in trans_type:
+                        description = f"DIVIDEND from {ticker}"
+                        counterparty = f"{ticker} (Dividend)"
+                        transaction_type = 'investment'
+                    else:
+                        description = f"{trans_type} {ticker}"
+                        counterparty = ticker
+                        transaction_type = 'payment'
+                    
+                    transaction = CSVTransaction(
+                        booking_date=booking_date,
+                        amount=amount,
+                        currency=currency,
+                        description=description,
+                        counterparty=counterparty,
+                        transaction_type=transaction_type,
+                        metadata={
+                            'ticker': ticker,
+                            'action': trans_type,
+                            'quantity': quantity,
+                            'price_per_share': price,
+                            'fx_rate': row.get('FX Rate', '').strip(),
+                        }
+                    )
+                    transactions.append(transaction)
+                except Exception as e:
+                    print(f"Error parsing Revolut stock row (new format): {e}")
+                    continue
+        else:
+            # Old format: Parse "Income from Sells" and "Other income & fees" sections
+            # Parse "Income from Sells" section
+            try:
+                sells_idx = next(i for i, l in enumerate(lines) if "Income from Sells" in l)
+                header_idx = next(i for i in range(sells_idx, len(lines)) if "Date acquired" in lines[i])
                 
-                for row in reader:
-                    try:
-                        date_str = row.get('Date', '').strip()
-                        symbol = row.get('Symbol', '').strip()
-                        security_name = row.get('Security name', '').strip()
-                        
+                sell_lines = []
+                for i in range(header_idx + 1, len(lines)):
+                    if lines[i].strip() == "" or "Other income" in lines[i]:
+                        break
+                    if lines[i].strip():
+                        sell_lines.append(lines[i])
+                
+                if sell_lines:
+                    reader = csv.DictReader(
+                        io.StringIO('\n'.join([lines[header_idx]] + sell_lines)),
+                        delimiter=','
+                    )
+                    
+                    for row in reader:
                         try:
-                            booking_date = datetime.strptime(date_str, "%Y-%m-%d")
-                        except:
+                            date_sold_str = row.get('Date sold', '').strip()
+                            symbol = row.get('Symbol', '').strip()
+                            security_name = row.get('Security name', '').strip()
+                            
+                            try:
+                                booking_date = datetime.strptime(date_sold_str, "%Y-%m-%d")
+                            except:
+                                continue
+                            
+                            # Gross proceeds
+                            proceeds_str = row.get('Gross proceeds', '0').strip()
+                            amount = self.parse_iso_decimal(proceeds_str)
+                            
+                            if amount == 0:
+                                continue
+                            
+                            currency = row.get('Currency', 'USD').strip()
+                            quantity = row.get('Quantity', '0').strip()
+                            
+                            description = f"SELL {quantity} x {symbol} ({security_name})"
+                            
+                            transaction = CSVTransaction(
+                                booking_date=booking_date,
+                                amount=amount,
+                                currency=currency,
+                                description=description,
+                                counterparty=f"{symbol} (Stock)",
+                                transaction_type='investment',
+                                metadata={
+                                    'symbol': symbol,
+                                    'security_name': security_name,
+                                    'action': 'sell',
+                                    'quantity': quantity,
+                                }
+                            )
+                            transactions.append(transaction)
+                        except Exception as e:
+                            print(f"Error parsing stock sell row: {e}")
                             continue
-                        
-                        # Net Amount
-                        net_amount_str = row.get('Net Amount', '0').strip()
-                        net_amount_str = net_amount_str.split()[0] if net_amount_str else '0'
-                        amount = self.parse_iso_decimal(net_amount_str)
-                        
-                        if amount == 0:
+            except:
+                pass
+            
+            # Parse "Other income & fees" section (dividends)
+            try:
+                income_idx = next(i for i, l in enumerate(lines) if "Other income & fees" in l)
+                header_idx = next(i for i in range(income_idx, len(lines)) if "Date,Symbol" in lines[i])
+                
+                income_lines = []
+                for i in range(header_idx + 1, len(lines)):
+                    if lines[i].strip() == "":
+                        break
+                    if lines[i].strip():
+                        income_lines.append(lines[i])
+                
+                if income_lines:
+                    reader = csv.DictReader(
+                        io.StringIO('\n'.join([lines[header_idx]] + income_lines)),
+                        delimiter=','
+                    )
+                    
+                    for row in reader:
+                        try:
+                            date_str = row.get('Date', '').strip()
+                            symbol = row.get('Symbol', '').strip()
+                            security_name = row.get('Security name', '').strip()
+                            
+                            try:
+                                booking_date = datetime.strptime(date_str, "%Y-%m-%d")
+                            except:
+                                continue
+                            
+                            # Net Amount
+                            net_amount_str = row.get('Net Amount', '0').strip()
+                            net_amount_str = net_amount_str.split()[0] if net_amount_str else '0'
+                            amount = self.parse_iso_decimal(net_amount_str)
+                            
+                            if amount == 0:
+                                continue
+                            
+                            currency = row.get('Currency', 'CZK').strip()
+                            
+                            # Withholding tax
+                            wh_tax_str = row.get('Withholding tax', '0').strip()
+                            wh_tax_str = wh_tax_str.replace('$', '').strip()
+                            wh_tax = self.parse_iso_decimal(wh_tax_str)
+                            
+                            description = f"DIVIDEND {symbol} ({security_name})"
+                            
+                            transaction = CSVTransaction(
+                                booking_date=booking_date,
+                                amount=amount,
+                                currency=currency,
+                                description=description,
+                                counterparty=f"{symbol} (Dividend)",
+                                transaction_type='investment',
+                                fees=wh_tax,
+                                metadata={
+                                    'symbol': symbol,
+                                    'security_name': security_name,
+                                    'action': 'dividend',
+                                    'withholding_tax': str(wh_tax),
+                                }
+                            )
+                            transactions.append(transaction)
+                        except Exception as e:
+                            print(f"Error parsing dividend row: {e}")
                             continue
-                        
-                        currency = row.get('Currency', 'CZK').strip()
-                        
-                        # Withholding tax
-                        wh_tax_str = row.get('Withholding tax', '0').strip()
-                        wh_tax_str = wh_tax_str.replace('$', '').strip()
-                        wh_tax = self.parse_iso_decimal(wh_tax_str)
-                        
-                        description = f"DIVIDEND {symbol} ({security_name})"
-                        
-                        transaction = CSVTransaction(
-                            booking_date=booking_date,
-                            amount=amount,
-                            currency=currency,
-                            description=description,
-                            counterparty=f"{symbol} (Dividend)",
-                            transaction_type='investment',
-                            fees=wh_tax,
-                            metadata={
-                                'symbol': symbol,
-                                'security_name': security_name,
-                                'action': 'dividend',
-                                'withholding_tax': str(wh_tax),
-                            }
-                        )
-                        transactions.append(transaction)
-                    except Exception as e:
-                        print(f"Error parsing dividend row: {e}")
-                        continue
-        except:
-            pass
+            except:
+                pass
         
         return transactions
 

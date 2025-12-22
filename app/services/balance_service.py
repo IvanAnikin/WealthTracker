@@ -36,14 +36,22 @@ def calculate_balance_at_date(
     
     # Start with initial balance
     balance = account.initial_balance_amount or 0.0
-    initial_date = account.initial_balance_date or account.created_at
+    initial_date = account.initial_balance_date
     
     # Build query for transactions
-    query = db.query(Transaction).filter(
-        Transaction.account_id == account_id,
-        Transaction.booking_date > initial_date,
-        Transaction.booking_date <= as_of_date
-    )
+    if initial_date:
+        # If initial balance date is set, only include transactions after that date
+        query = db.query(Transaction).filter(
+            Transaction.account_id == account_id,
+            Transaction.booking_date > initial_date,
+            Transaction.booking_date <= as_of_date
+        )
+    else:
+        # For CSV imports without initial balance, include all transactions
+        query = db.query(Transaction).filter(
+            Transaction.account_id == account_id,
+            Transaction.booking_date <= as_of_date
+        )
     
     # Filter by status
     if not include_pending:

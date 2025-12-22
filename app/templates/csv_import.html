@@ -36,9 +36,7 @@
                     <option value="Raiffeisen sporici">Raiffeisen - Savings Account</option>
                 </optgroup>
                 <optgroup label="Revolut">
-                    <option value="Revolut CZK">Revolut - CZK (Current)</option>
-                    <option value="Revolut EUR">Revolut - EUR (Current)</option>
-                    <option value="Revolut USD">Revolut - USD (Current)</option>
+                    <option value="Revolut Current">Revolut - Main Accounts</option>
                     <option value="Revolut crypto">Revolut - Crypto</option>
                     <option value="Revolut stock">Revolut - Stock</option>
                 </optgroup>
@@ -51,16 +49,6 @@
         </div>
         
         <div class="form-group">
-            <label>Currency *</label>
-            <select id="currency" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
-                <option value="CZK" selected>CZK (Czech Koruna)</option>
-                <option value="EUR">EUR (Euro)</option>
-                <option value="USD">USD (US Dollar)</option>
-                <option value="GBP">GBP (British Pound)</option>
-            </select>
-        </div>
-        
-        <div class="form-group">
             <label>IBAN (optional)</label>
             <input type="text" id="iban" placeholder="CZ1234567890123456789012" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
         </div>
@@ -69,6 +57,18 @@
         <div id="createAccountMessage"></div>
     </div>
     
+    <!-- Step 1.5: Currency Selection (Revolut only) -->
+    <div class="card" id="currencySelectionStep" style="display: none; margin-top: 2rem;">
+        <h2>Step 1.5: Select Currencies to Import</h2>
+        <p style="color: #7f8c8d;">Your Revolut CSV contains multiple currencies. Select which currencies you want to import:</p>
+        
+        <div id="currencyCheckboxes" style="margin: 1rem 0;"></div>
+        
+        <button class="btn" onclick="proceedWithCurrencies()" style="background: #27ae60; color: white;">Continue with Selected Currencies</button>
+        <button class="btn" onclick="goBackToCreate()" style="background: #95a5a6; color: white; margin-left: 0.5rem;">Back</button>
+        <div id="currencySelectionMessage"></div>
+    </div>
+
     <!-- Step 2: Upload CSV -->
     <div class="card" id="uploadCSVStep" style="display: none; margin-top: 2rem;">
         <h2>Step 2: Upload CSV File</h2>
@@ -131,6 +131,10 @@
 const token = localStorage.getItem('token');
 const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;
 let currentAccountId = null;
+let currentAccountType = null;
+let uploadedFile = null;
+let detectedCurrencies = [];
+let selectedCurrencies = [];
 
 async function fetchAPI(endpoint, options = {}) {
     try {
@@ -154,6 +158,7 @@ async function fetchAPI(endpoint, options = {}) {
 
 function updateAccountName() {
     const type = document.getElementById('accountType').value;
+    
     if (!document.getElementById('accountName').value) {
         document.getElementById('accountName').value = type;
     }
@@ -162,7 +167,6 @@ function updateAccountName() {
 async function createAccount() {
     const type = document.getElementById('accountType').value;
     const name = document.getElementById('accountName').value;
-    const currency = document.getElementById('currency').value;
     const iban = document.getElementById('iban').value;
     
     if (!type) {
@@ -170,11 +174,25 @@ async function createAccount() {
         return;
     }
     
+    currentAccountType = type;
+    
+    // For Revolut accounts (Current, Crypto, Stock), skip account creation and go to upload
+    // Currency will be detected from CSV
+    if (type === 'Revolut Current' || type === 'Revolut crypto' || type === 'Revolut stock') {
+        document.getElementById('createAccountStep').style.display = 'none';
+        document.getElementById('uploadCSVStep').style.display = 'block';
+        document.getElementById('step1').style.opacity = '0.5';
+        document.getElementById('step2').style.opacity = '1';
+        document.getElementById('accountInfo').textContent = `Upload your ${type} CSV to detect currencies`;
+        return;
+    }
+    
+    // For Raiffeisen accounts, create account with CZK (will be detected from CSV anyway)
     try {
         const formData = new FormData();
         formData.append('account_type', type);
         formData.append('account_name', name || type);
-        formData.append('currency', currency);
+        formData.append('currency', 'CZK'); // Default currency, will be overridden if CSV has different currency
         if (iban) formData.append('iban', iban);
         
         const response = await fetch(`${API_BASE_URL}/imports/accounts`, {
@@ -195,7 +213,7 @@ async function createAccount() {
         document.getElementById('uploadCSVStep').style.display = 'block';
         document.getElementById('step1').style.opacity = '0.5';
         document.getElementById('step2').style.opacity = '1';
-        document.getElementById('accountInfo').textContent = `Account created: ${data.name} (${currency})`;
+        document.getElementById('accountInfo').textContent = `Account created: ${data.name}`;
         
         showMessage('createAccountMessage', 'success', data.message);
     } catch (error) {
@@ -203,11 +221,51 @@ async function createAccount() {
     }
 }
 
-function handleFileSelect() {
+async function handleFileSelect() {
     const file = document.getElementById('csvFile').files[0];
-    if (file) {
-        document.getElementById('fileName').textContent = file.name;
-        document.getElementById('fileInfo').style.display = 'block';
+    if (!file) return;
+    
+    uploadedFile = file;
+    document.getElementById('fileName').textContent = file.name;
+    document.getElementById('fileInfo').style.display = 'block';
+    
+    // For Revolut accounts (Current, Crypto, Stock), detect currencies first
+    if (currentAccountType === 'Revolut Current' || currentAccountType === 'Revolut crypto' || currentAccountType === 'Revolut stock') {
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const response = await fetch(`${API_BASE_URL}/imports/detect-currencies`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            });
+            
+            if (!response.ok) throw new Error('Failed to detect currencies');
+            const data = await response.json();
+            
+            detectedCurrencies = data.currencies;
+            
+            // Show currency selection
+            document.getElementById('uploadCSVStep').style.display = 'none';
+            document.getElementById('currencySelectionStep').style.display = 'block';
+            
+            const checkboxesHtml = detectedCurrencies.map(curr => `
+                <label style="display: block; padding: 0.75rem; margin: 0.5rem 0; background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 4px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#3498db'" onmouseout="this.style.borderColor='#dee2e6'">
+                    <input type="checkbox" value="${curr}" checked onchange="toggleCurrency('${curr}')" style="margin-right: 0.5rem; width: 18px; height: 18px; cursor: pointer;">
+                    <strong style="font-size: 1.1rem;">${curr}</strong> <span style="color: #7f8c8d;">- ${data.transaction_counts[curr]} transactions</span>
+                </label>
+            `).join('');
+            
+            document.getElementById('currencyCheckboxes').innerHTML = checkboxesHtml;
+            selectedCurrencies = [...detectedCurrencies];
+            
+        } catch (error) {
+            showMessage('uploadMessage', 'error', error.message);
+        }
+    } else {
         document.getElementById('previewBtn').style.display = 'inline-block';
     }
 }
@@ -319,11 +377,14 @@ async function confirmImport() {
 
 function goBackToCreate() {
     document.getElementById('uploadCSVStep').style.display = 'none';
+    document.getElementById('currencySelectionStep').style.display = 'none';
     document.getElementById('createAccountStep').style.display = 'block';
     document.getElementById('step1').style.opacity = '1';
     document.getElementById('step2').style.opacity = '0.5';
     document.getElementById('step3').style.opacity = '0.5';
     currentAccountId = null;
+    currentAccountType = null;
+    uploadedFile = null;
 }
 
 function goBackToUpload() {
@@ -331,6 +392,104 @@ function goBackToUpload() {
     document.getElementById('uploadCSVStep').style.display = 'block';
     document.getElementById('step2').style.opacity = '1';
     document.getElementById('step3').style.opacity = '0.5';
+}
+
+function toggleCurrency(currency) {
+    if (selectedCurrencies.includes(currency)) {
+        selectedCurrencies = selectedCurrencies.filter(c => c !== currency);
+    } else {
+        selectedCurrencies.push(currency);
+    }
+}
+
+async function proceedWithCurrencies() {
+    if (selectedCurrencies.length === 0) {
+        alert('Please select at least one currency');
+        return;
+    }
+    
+    // Create a temporary account to proceed with import
+    try {
+        const formData = new FormData();
+        
+        // Determine account type and name based on currentAccountType
+        let accountType = currentAccountType;
+        let accountName = 'Revolut Multi-Currency';
+        
+        if (currentAccountType === 'Revolut crypto') {
+            accountName = 'Revolut Crypto Multi-Currency';
+        } else if (currentAccountType === 'Revolut stock') {
+            accountName = 'Revolut Stock Multi-Currency';
+        }
+        
+        formData.append('account_type', accountType);
+        formData.append('account_name', accountName);
+        formData.append('currency', selectedCurrencies[0]); // Use first currency as default
+        
+        const response = await fetch(`${API_BASE_URL}/imports/accounts`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            body: formData
+        });
+        
+        if (!response.ok) throw new Error('Failed to create account');
+        const data = await response.json();
+        
+        currentAccountId = data.id;
+        
+        // Now proceed to import with selected currencies
+        await importWithCurrencies();
+        
+    } catch (error) {
+        showMessage('currencySelectionMessage', 'error', error.message);
+    }
+}
+
+async function importWithCurrencies() {
+    if (!uploadedFile) {
+        alert('No file uploaded');
+        return;
+    }
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', uploadedFile);
+        formData.append('selected_currencies', JSON.stringify(selectedCurrencies));
+        
+        const response = await fetch(`${API_BASE_URL}/imports/accounts/${currentAccountId}/import`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Import failed');
+        }
+        const data = await response.json();
+        
+        // Show success
+        document.getElementById('currencySelectionStep').style.display = 'none';
+        document.getElementById('successMessage').style.display = 'block';
+        
+        if (data.details) {
+            // Multi-currency import result
+            const detailsHtml = data.details.map(d => 
+                `<li><strong>${d.currency}:</strong> ${d.imported} imported, ${d.duplicates} duplicates, ${d.errors} errors</li>`
+            ).join('');
+            document.getElementById('successText').innerHTML = 
+                `${data.message}<br><br><strong>Details:</strong><ul>${detailsHtml}</ul>`;
+        } else {
+            document.getElementById('successText').textContent = data.message;
+        }
+        
+    } catch (error) {
+        showMessage('currencySelectionMessage', 'error', error.message);
+    }
 }
 
 function showMessage(elementId, type, message) {
@@ -345,3 +504,4 @@ function showMessage(elementId, type, message) {
 // Initialize
 document.addEventListener('DOMContentLoaded', setupDragDrop);
 </script>
+{% endblock %}

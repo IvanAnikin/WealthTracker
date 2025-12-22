@@ -19,7 +19,7 @@ def list_transactions(
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
     status: Optional[str] = Query(None),
-    limit: int = Query(100, le=1000),
+    limit: int = Query(100, ge=1, le=50000),
     offset: int = Query(0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
