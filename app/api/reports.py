@@ -23,6 +23,8 @@ def cashflow_report(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     account_id: Optional[str] = Query(None),
+    exclude_investment: bool = Query(False),
+    exclude_internal_transfers: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -32,7 +34,11 @@ def cashflow_report(
     if not start_date:
         start_date = end_date - timedelta(days=365)
     
-    data = get_monthly_cashflow(db, current_user.id, start_date, end_date, account_id)
+    data = get_monthly_cashflow(
+        db, current_user.id, start_date, end_date, account_id,
+        exclude_investment=exclude_investment,
+        exclude_internal_transfers=exclude_internal_transfers
+    )
     return [CashflowReport(**item) for item in data]
 
 
@@ -41,6 +47,8 @@ def category_report(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     account_id: Optional[str] = Query(None),
+    exclude_investment: bool = Query(False),
+    exclude_internal_transfers: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -50,7 +58,11 @@ def category_report(
     if not start_date:
         start_date = end_date - timedelta(days=30)
     
-    data = get_category_breakdown(db, current_user.id, start_date, end_date, account_id)
+    data = get_category_breakdown(
+        db, current_user.id, start_date, end_date, account_id,
+        exclude_investment=exclude_investment,
+        exclude_internal_transfers=exclude_internal_transfers
+    )
     return [CategoryBreakdown(**item) for item in data]
 
 
@@ -84,6 +96,8 @@ def accounts_summary(
 def transaction_stats(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
+    exclude_investment: bool = Query(False),
+    exclude_internal_transfers: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -93,11 +107,31 @@ def transaction_stats(
     if not start_date:
         start_date = end_date - timedelta(days=30)
     
-    stats = get_transaction_statistics(db, current_user.id, start_date, end_date)
+    stats = get_transaction_statistics(
+        db, current_user.id, start_date, end_date,
+        exclude_investment=exclude_investment,
+        exclude_internal_transfers=exclude_internal_transfers
+    )
     return {
         "period": {
             "start": start_date.isoformat(),
             "end": end_date.isoformat()
         },
         **stats
+    }
+
+
+@router.post("/detect-internal-transfers")
+def detect_internal_transfers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Detect and mark internal transfers between user's accounts."""
+    from app.services.balance_service import detect_and_mark_internal_transfers
+    
+    updated_count = detect_and_mark_internal_transfers(db, current_user.id)
+    return {
+        "success": True,
+        "updated_count": updated_count,
+        "message": f"Detected and marked {updated_count} internal transfer transactions"
     }

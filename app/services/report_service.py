@@ -11,7 +11,9 @@ def get_monthly_cashflow(
     user_id: str,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    account_id: Optional[str] = None
+    account_id: Optional[str] = None,
+    exclude_investment: bool = False,
+    exclude_internal_transfers: bool = False
 ) -> List[dict]:
     """
     Get monthly cashflow report (income vs expenses).
@@ -22,6 +24,8 @@ def get_monthly_cashflow(
         start_date: Start date for report
         end_date: End date for report
         account_id: Optional account filter
+        exclude_investment: Exclude investment accounts
+        exclude_internal_transfers: Exclude internal transfers
     
     Returns:
         List of monthly cashflow data
@@ -57,6 +61,12 @@ def get_monthly_cashflow(
         Transaction.booking_date <= end_date
     )
     
+    # Apply filters
+    if exclude_investment:
+        query = query.filter(Account.account_purpose != 'investment')
+    if exclude_internal_transfers:
+        query = query.filter(Transaction.is_internal_transfer == False)
+    
     if account_id:
         query = query.filter(Transaction.account_id == account_id)
     
@@ -83,7 +93,9 @@ def get_category_breakdown(
     user_id: str,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    account_id: Optional[str] = None
+    account_id: Optional[str] = None,
+    exclude_investment: bool = False,
+    exclude_internal_transfers: bool = False
 ) -> List[dict]:
     """
     Get spending breakdown by category.
@@ -94,6 +106,8 @@ def get_category_breakdown(
         start_date: Start date for report
         end_date: End date for report
         account_id: Optional account filter
+        exclude_investment: Exclude investment accounts
+        exclude_internal_transfers: Exclude internal transfers
     
     Returns:
         List of category breakdown data
@@ -124,6 +138,12 @@ def get_category_breakdown(
         Transaction.booking_date >= start_date,
         Transaction.booking_date <= end_date
     )
+    
+    # Apply filters
+    if exclude_investment:
+        query = query.filter(Account.account_purpose != 'investment')
+    if exclude_internal_transfers:
+        query = query.filter(Transaction.is_internal_transfer == False)
     
     if account_id:
         query = query.filter(Transaction.account_id == account_id)
@@ -245,7 +265,9 @@ def get_transaction_statistics(
     db: Session,
     user_id: str,
     start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None,
+    exclude_investment: bool = False,
+    exclude_internal_transfers: bool = False
 ) -> dict:
     """
     Get overall transaction statistics.
@@ -255,6 +277,8 @@ def get_transaction_statistics(
         user_id: User ID
         start_date: Start date
         end_date: End date
+        exclude_investment: Exclude investment accounts
+        exclude_internal_transfers: Exclude internal transfers
     
     Returns:
         Dictionary with statistics
@@ -270,6 +294,12 @@ def get_transaction_statistics(
         Transaction.booking_date >= start_date,
         Transaction.booking_date <= end_date
     )
+    
+    # Apply filters
+    if exclude_investment:
+        query = query.filter(Account.account_purpose != 'investment')
+    if exclude_internal_transfers:
+        query = query.filter(Transaction.is_internal_transfer == False)
     
     total_transactions = query.count()
     
@@ -289,3 +319,4 @@ def get_transaction_statistics(
         'total_expenses': float(abs(total_expenses)),
         'net': float(total_income + total_expenses)
     }
+

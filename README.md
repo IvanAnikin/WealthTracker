@@ -74,6 +74,7 @@ GoCardless Bank Account Data API (Open Banking)
 
 5. **Initialize database**
    ```bash
+   ./venv/bin/python -m  alembic upgrade head
    alembic upgrade head
    ```
 

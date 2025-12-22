@@ -142,3 +142,30 @@ def get_total_balance(
         "balances_by_currency": balances,
         "total": sum(balances.values()) if len(balances) == 1 else None
     }
+
+
+@router.patch("/{transaction_id}/internal-transfer")
+def toggle_internal_transfer(
+    transaction_id: str,
+    is_internal: bool,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Manually mark or unmark a transaction as internal transfer."""
+    # Get transaction and verify ownership
+    transaction = db.query(Transaction).join(Account).filter(
+        Transaction.id == transaction_id,
+        Account.user_id == current_user.id
+    ).first()
+    
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    transaction.is_internal_transfer = is_internal
+    db.commit()
+    
+    return {
+        "success": True,
+        "transaction_id": transaction_id,
+        "is_internal_transfer": is_internal
+    }

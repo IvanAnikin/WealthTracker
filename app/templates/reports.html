@@ -4,6 +4,111 @@
 
 {% block extra_css %}
 <style>
+    :root {
+        --bg-color: #ffffff;
+        --text-color: #2c3e50;
+        --border-color: #ddd;
+        --input-bg: #ffffff;
+        --card-bg: #f8f9fa;
+        --hover-bg: #ecf0f1;
+        --chart-text: #2c3e50;
+    }
+    
+    body.dark-mode {
+        --bg-color: #1e1e1e;
+        --text-color: #e0e0e0;
+        --border-color: #444;
+        --input-bg: #2d2d2d;
+        --card-bg: #2d2d2d;
+        --hover-bg: #3d3d3d;
+        --chart-text: #e0e0e0;
+    }
+    
+    body {
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        transition: background-color 0.3s, color 0.3s;
+    }
+    
+    /* Dark Mode Toggle */
+    .dark-mode-toggle {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+    }
+    
+    .toggle-switch {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: var(--card-bg);
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        border: 1px solid var(--border-color);
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .toggle-switch:hover {
+        background: var(--hover-bg);
+    }
+    
+    .toggle-checkbox {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        accent-color: #3498db;
+    }
+    
+    /* Loading Popup */
+    .loading-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 999;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    .loading-overlay.active {
+        display: flex;
+    }
+    
+    .loading-popup {
+        background: var(--card-bg);
+        padding: 2rem;
+        border-radius: 12px;
+        text-align: center;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        min-width: 300px;
+    }
+    
+    .spinner {
+        border: 4px solid var(--border-color);
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 1rem;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .loading-text {
+        color: var(--text-color);
+        font-weight: 500;
+        margin: 0;
+    }
+
     .chart-container {
         position: relative;
         height: 400px;
@@ -18,11 +123,12 @@
     
     .period-btn {
         padding: 0.5rem 1rem;
-        border: 1px solid #ddd;
-        background: white;
+        border: 1px solid var(--border-color);
+        background: var(--input-bg);
         border-radius: 4px;
         cursor: pointer;
         transition: all 0.2s;
+        color: var(--text-color);
     }
     
     .period-btn.active {
@@ -32,21 +138,404 @@
     }
     
     .period-btn:hover {
-        background: #ecf0f1;
+        background: var(--hover-bg);
     }
     
     .period-btn.active:hover {
         background: #2980b9;
     }
+    
+    /* Date Range Slider */
+    .date-range-container {
+        background: var(--card-bg);
+        padding: 2rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        border: 1px solid var(--border-color);
+    }
+    
+    .date-range-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+    
+    .date-range-header h3 {
+        margin: 0;
+        color: var(--text-color);
+    }
+    
+    .date-display {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+    
+    .date-input-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .date-input-group label {
+        font-size: 0.75rem;
+        color: #7f8c8d;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .date-input-group input {
+        padding: 0.5rem 0.75rem;
+        border: 2px solid var(--border-color);
+        border-radius: 4px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-color);
+        background: var(--input-bg);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .date-input-group input:hover {
+        border-color: #3498db;
+    }
+    
+    .date-input-group input:focus {
+        outline: none;
+        border-color: #3498db;
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+    }
+    
+    .date-separator {
+        color: #95a5a6;
+        font-weight: 600;
+        padding-top: 1.25rem;
+    }
+    
+    .slider-container {
+        margin-top: 1.5rem;
+    }
+    
+    .range-slider-wrapper {
+        position: relative;
+        margin: 1.5rem 0;
+    }
+    
+    .range-slider-track {
+        position: relative;
+        height: 8px;
+        background: var(--hover-bg);
+        border-radius: 4px;
+        margin: 1.5rem 0;
+        cursor: pointer;
+    }
+    
+    .range-slider-highlight {
+        position: absolute;
+        height: 8px;
+        background: linear-gradient(90deg, #3498db, #2980b9);
+        border-radius: 4px;
+        top: 0;
+        z-index: 5;
+    }
+    
+    .range-slider-thumb {
+        position: absolute;
+        width: 22px;
+        height: 22px;
+        background: var(--input-bg);
+        border: 3px solid #3498db;
+        border-radius: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        cursor: grab;
+        z-index: 10;
+        transition: all 0.2s;
+        box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
+    }
+    
+    .range-slider-thumb:hover {
+        width: 26px;
+        height: 26px;
+        box-shadow: 0 2px 12px rgba(52, 152, 219, 0.5);
+    }
+    
+    .range-slider-thumb.active {
+        cursor: grabbing;
+        box-shadow: 0 2px 16px rgba(52, 152, 219, 0.7);
+    }
+    
+    .range-slider-labels {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 0.5rem;
+        font-size: 0.75rem;
+        color: #95a5a6;
+    }
+    
+    .range-stats {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #ddd;
+    }
+    
+    .range-stat-item {
+        flex: 1;
+        text-align: center;
+    }
+    
+    .range-stat-label {
+        font-size: 0.75rem;
+        color: #7f8c8d;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+    
+    .range-stat-value {
+        font-size: 0.9rem;
+        color: var(--text-color);
+        font-weight: 600;
+    }
+    
+    .reset-dates-btn {
+        padding: 0.5rem 1rem;
+        background: var(--hover-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+        color: var(--text-color);
+    }
+    
+    .reset-dates-btn:hover {
+        background: #d5dbdb;
+    }
+    
+    body.dark-mode .reset-dates-btn:hover {
+        background: #4d4d4d;
+    }
+    
+    /* Filter Toggles */
+    .filter-toggles {
+        display: flex;
+        gap: 2rem;
+        margin-bottom: 2rem;
+        padding: 1rem;
+        background: var(--card-bg);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+    }
+    
+    .filter-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        cursor: pointer;
+    }
+    
+    .toggle-checkbox {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        accent-color: #3498db;
+    }
+    
+    .toggle-label {
+        font-size: 0.95rem;
+        color: var(--text-color);
+        font-weight: 500;
+        cursor: pointer;
+        user-select: none;
+    }
+    
+    .toggle-icon {
+        font-size: 1rem;
+        margin-right: 0.25rem;
+    }
+    
+    /* Stat Cards */
+    .stat-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+    }
+    
+    .stat-card h3 {
+        color: var(--text-color);
+    }
+    
+    .stat-card .value {
+        color: var(--text-color);
+    }
+    
+    .stat-card .positive {
+        color: #27ae60;
+    }
+    
+    .stat-card .negative {
+        color: #e74c3c;
+    }
+    
+    /* Chart Cards */
+    .card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+    }
+    
+    .card h2, .card h3, .card h4, .card h5, .card h6 {
+        color: var(--text-color);
+    }
+    
+    .grid {
+        color: var(--text-color);
+    }
+    
+    /* Generic Dark Mode Adjustments */
+    h1, h2, h3, h4, h5, h6 {
+        color: var(--text-color);
+    }
+    
+    input, textarea, select {
+        background-color: var(--input-bg);
+        color: var(--text-color);
+        border-color: var(--border-color);
+    }
+    
+    /* Date input calendar icon fix */
+    input[type="date"]::-webkit-calendar-picker-indicator {
+        filter: invert(var(--invert-amount, 0));
+        cursor: pointer;
+    }
+    
+    body.dark-mode input[type="date"]::-webkit-calendar-picker-indicator {
+        filter: invert(1);
+    }
+    
+    /* Checkbox styling for dark mode */
+    input[type="checkbox"] {
+        accent-color: #3498db;
+        cursor: pointer;
+    }
+    
+    body.dark-mode input[type="checkbox"] {
+        background-color: #3d3d3d;
+    }
+    
+    /* Chart container background */
+    .chart-container {
+        background: var(--input-bg);
+        border-radius: 8px;
+        padding: 1rem;
+    }
+    
+    /* Canvas elements for charts */
+    canvas {
+        max-height: 400px;
+    }
+    
+    input::placeholder {
+        color: #999;
+    }
+    
+    button {
+        color: var(--text-color);
+    }
 </style>
 {% endblock %}
 
 {% block content %}
+<!-- Dark Mode Toggle -->
+<div class="dark-mode-toggle">
+    <label class="toggle-switch">
+        <input type="checkbox" id="darkModeToggle" class="toggle-checkbox" onchange="toggleDarkMode()">
+        <span id="darkModeIcon">🌙</span>
+    </label>
+</div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-popup">
+        <div class="spinner"></div>
+        <p class="loading-text">Loading reports...</p>
+    </div>
+</div>
+
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
     <h1>📊 Financial Reports</h1>
     <div style="display: flex; gap: 1rem;">
         <a href="/export/cashflow.csv" class="btn btn-secondary">💾 Export Cashflow</a>
         <a href="/export/categories.csv" class="btn btn-secondary">💾 Export Categories</a>
+    </div>
+</div>
+
+<!-- Filter Toggles -->
+<div class="filter-toggles">
+    <label class="filter-toggle">
+        <input type="checkbox" id="excludeInvestmentToggle" class="toggle-checkbox" onchange="updateChartsFromInputs()">
+        <span class="toggle-icon">🏦</span>
+        <span class="toggle-label">Exclude Investment Accounts</span>
+    </label>
+    <label class="filter-toggle">
+        <input type="checkbox" id="excludeInternalTransfersToggle" class="toggle-checkbox" onchange="updateChartsFromInputs()">
+        <span class="toggle-icon">🔄</span>
+        <span class="toggle-label">Hide Internal Transfers</span>
+    </label>
+</div>
+
+
+<!-- Date Range Slider -->
+<div class="date-range-container">
+    <div class="date-range-header">
+        <h3>📅 Select Date Range</h3>
+        <div>
+            <button class="reset-dates-btn" onclick="detectInternalTransfers()" style="margin-right: 10px;">🔍 Detect Internal Transfers</button>
+            <button class="reset-dates-btn" onclick="resetDateRange()">Reset to Default</button>
+        </div>
+    </div>
+    
+    <div class="date-display">
+        <div class="date-input-group">
+            <label>Start Date</label>
+            <input type="date" id="startDateInput" onchange="updateChartsFromInputs()">
+        </div>
+        <div class="date-separator">→</div>
+        <div class="date-input-group">
+            <label>End Date</label>
+            <input type="date" id="endDateInput" onchange="updateChartsFromInputs()">
+        </div>
+    </div>
+    
+    <div class="range-slider-wrapper">
+        <div class="range-slider-track" id="rangeSliderTrack">
+            <div class="range-slider-highlight" id="rangeHighlight"></div>
+            <div class="range-slider-thumb" id="rangeThumbStart" onmousedown="startDrag(event, 'start')"></div>
+            <div class="range-slider-thumb" id="rangeThumbEnd" onmousedown="startDrag(event, 'end')"></div>
+        </div>
+        <div class="range-slider-labels">
+            <span id="minDateLabel">Earliest</span>
+            <span id="maxDateLabel">Today</span>
+        </div>
+    </div>
+    
+    <div class="range-stats">
+        <div class="range-stat-item">
+            <div class="range-stat-label">Days Selected</div>
+            <div class="range-stat-value" id="daysSelected">0</div>
+        </div>
+        <div class="range-stat-item">
+            <div class="range-stat-label">Start Date</div>
+            <div class="range-stat-value" id="displayStartDate">--</div>
+        </div>
+        <div class="range-stat-item">
+            <div class="range-stat-label">End Date</div>
+            <div class="range-stat-value" id="displayEndDate">--</div>
+        </div>
     </div>
 </div>
 
@@ -57,27 +546,22 @@
         <div class="value" id="currentBalance">Loading...</div>
     </div>
     <div class="stat-card">
-        <h3>THIS MONTH INCOME</h3>
-        <div class="value positive" id="monthIncome">0</div>
+        <h3>PERIOD INCOME</h3>
+        <div class="value positive" id="periodIncome">0</div>
     </div>
     <div class="stat-card">
-        <h3>THIS MONTH EXPENSES</h3>
-        <div class="value negative" id="monthExpenses">0</div>
+        <h3>PERIOD EXPENSES</h3>
+        <div class="value negative" id="periodExpenses">0</div>
     </div>
     <div class="stat-card">
-        <h3>THIS MONTH NET</h3>
-        <div class="value" id="monthNet">0</div>
+        <h3>PERIOD NET</h3>
+        <div class="value" id="periodNet">0</div>
     </div>
 </div>
 
 <!-- Cashflow Chart -->
 <div class="card">
     <h2>💰 Income vs Expenses</h2>
-    <div class="period-selector">
-        <button class="period-btn active" onclick="setCashflowPeriod('6months')">6 Months</button>
-        <button class="period-btn" onclick="setCashflowPeriod('12months')">12 Months</button>
-        <button class="period-btn" onclick="setCashflowPeriod('2years')">2 Years</button>
-    </div>
     <div class="chart-container">
         <canvas id="cashflowChart"></canvas>
     </div>
@@ -86,11 +570,6 @@
 <!-- Category Breakdown -->
 <div class="card">
     <h2>📦 Spending by Category</h2>
-    <div class="period-selector">
-        <button class="period-btn active" onclick="setCategoryPeriod('30days')">Last 30 Days</button>
-        <button class="period-btn" onclick="setCategoryPeriod('90days')">Last 90 Days</button>
-        <button class="period-btn" onclick="setCategoryPeriod('365days')">Last Year</button>
-    </div>
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem;">
         <div class="chart-container">
             <canvas id="categoryPieChart"></canvas>
@@ -111,7 +590,7 @@
 
 <!-- Weekly Breakdown -->
 <div class="card">
-    <h2>📅 Weekly Breakdown (Last 12 Weeks)</h2>
+    <h2>📅 Weekly Breakdown</h2>
     <div class="chart-container">
         <canvas id="weeklyChart"></canvas>
     </div>
@@ -121,9 +600,21 @@
 <script>
 const token = localStorage.getItem('token');
 const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;
+
+// Track all chart instances for easy color updates
+let chartInstances = [];
+
 let cashflowChart, categoryPieChart, categoryBarChart, netWorthChart, weeklyChart;
-let cashflowPeriod = '6months';
-let categoryPeriod = '30days';
+
+// Date range state
+let dateRangeState = {
+    minDate: null,
+    maxDate: null,
+    startDate: null,
+    endDate: null,
+    isDragging: false,
+    dragTarget: null
+};
 
 async function fetchAPI(endpoint) {
     try {
@@ -138,36 +629,307 @@ async function fetchAPI(endpoint) {
     }
 }
 
-function getDateRange(period) {
-    const end = new Date();
-    const start = new Date();
-    
-    switch(period) {
-        case '30days':
-            start.setDate(start.getDate() - 30);
-            break;
-        case '90days':
-            start.setDate(start.getDate() - 90);
-            break;
-        case '365days':
-            start.setFullYear(start.getFullYear() - 1);
-            break;
-        case '6months':
-            start.setMonth(start.getMonth() - 6);
-            break;
-        case '12months':
-            start.setFullYear(start.getFullYear() - 1);
-            break;
-        case '2years':
-            start.setFullYear(start.getFullYear() - 2);
-            break;
-    }
-    
-    return { start: start.toISOString(), end: end.toISOString() };
+function dateToString(date) {
+    return date.toISOString().split('T')[0];
 }
 
+function stringToDate(str) {
+    const [year, month, day] = str.split('-');
+    return new Date(year, month - 1, day);
+}
+
+function initializeDateRange() {
+    // Set max date to today
+    dateRangeState.maxDate = new Date();
+    
+    // Set min date to 2 years ago
+    dateRangeState.minDate = new Date();
+    dateRangeState.minDate.setFullYear(dateRangeState.minDate.getFullYear() - 2);
+    
+    // Set default range to last 6 months
+    dateRangeState.endDate = new Date();
+    dateRangeState.startDate = new Date();
+    dateRangeState.startDate.setMonth(dateRangeState.startDate.getMonth() - 6);
+    
+    updateDateDisplay();
+}
+
+function updateDateDisplay() {
+    const startStr = dateToString(dateRangeState.startDate);
+    const endStr = dateToString(dateRangeState.endDate);
+    
+    // Update input fields
+    document.getElementById('startDateInput').value = startStr;
+    document.getElementById('endDateInput').value = endStr;
+    
+    // Update display values
+    document.getElementById('displayStartDate').textContent = new Date(startStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    document.getElementById('displayEndDate').textContent = new Date(endStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    
+    // Calculate days selected
+    const daysCount = Math.floor((dateRangeState.endDate - dateRangeState.startDate) / (1000 * 60 * 60 * 24)) + 1;
+    document.getElementById('daysSelected').textContent = daysCount;
+    
+    // Update slider positions
+    updateSliderPositions();
+}
+
+function updateSliderPositions() {
+    const track = document.getElementById('rangeSliderTrack');
+    const trackRect = track.getBoundingClientRect();
+    const trackWidth = trackRect.width;
+    
+    const minTime = dateRangeState.minDate.getTime();
+    const maxTime = dateRangeState.maxDate.getTime();
+    const startTime = dateRangeState.startDate.getTime();
+    const endTime = dateRangeState.endDate.getTime();
+    
+    const startPercent = ((startTime - minTime) / (maxTime - minTime)) * 100;
+    const endPercent = ((endTime - minTime) / (maxTime - minTime)) * 100;
+    
+    // Position thumbs
+    document.getElementById('rangeThumbStart').style.left = startPercent + '%';
+    document.getElementById('rangeThumbEnd').style.left = endPercent + '%';
+    
+    // Position highlight
+    document.getElementById('rangeHighlight').style.left = startPercent + '%';
+    document.getElementById('rangeHighlight').style.right = (100 - endPercent) + '%';
+}
+
+function startDrag(event, target) {
+    event.preventDefault();
+    dateRangeState.isDragging = true;
+    dateRangeState.dragTarget = target;
+    
+    event.target.classList.add('active');
+    
+    document.addEventListener('mousemove', handleDrag);
+    document.addEventListener('mouseup', stopDrag);
+}
+
+function handleDrag(event) {
+    if (!dateRangeState.isDragging) return;
+    
+    const track = document.getElementById('rangeSliderTrack');
+    const trackRect = track.getBoundingClientRect();
+    const x = event.clientX - trackRect.left;
+    const percent = Math.max(0, Math.min(100, (x / trackRect.width) * 100));
+    
+    const minTime = dateRangeState.minDate.getTime();
+    const maxTime = dateRangeState.maxDate.getTime();
+    const selectedTime = minTime + (percent / 100) * (maxTime - minTime);
+    const selectedDate = new Date(selectedTime);
+    
+    if (dateRangeState.dragTarget === 'start') {
+        if (selectedDate < dateRangeState.endDate) {
+            dateRangeState.startDate = selectedDate;
+        }
+    } else {
+        if (selectedDate > dateRangeState.startDate) {
+            dateRangeState.endDate = selectedDate;
+        }
+    }
+    
+    updateDateDisplay();
+}
+
+function stopDrag() {
+    dateRangeState.isDragging = false;
+    dateRangeState.dragTarget = null;
+    
+    document.querySelectorAll('.range-slider-thumb').forEach(thumb => {
+        thumb.classList.remove('active');
+    });
+    
+    document.removeEventListener('mousemove', handleDrag);
+    document.removeEventListener('mouseup', stopDrag);
+    
+    updateChartsFromInputs();
+}
+
+function updateChartsFromInputs() {
+    const startStr = document.getElementById('startDateInput').value;
+    const endStr = document.getElementById('endDateInput').value;
+    
+    if (startStr && endStr) {
+        dateRangeState.startDate = stringToDate(startStr);
+        dateRangeState.endDate = stringToDate(endStr);
+        updateDateDisplay();
+        loadAllCharts();
+    }
+}
+
+function resetDateRange() {
+    initializeDateRange();
+    loadAllCharts();
+}
+
+async function detectInternalTransfers() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳ Detecting...';
+    
+    try {
+        const response = await fetch('/reports/detect-internal-transfers', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+        
+        if (!response.ok) throw new Error('Detection failed');
+        
+        const data = await response.json();
+        alert(`✅ ${data.message}`);
+        
+        // Reload charts to reflect changes
+        loadAllCharts();
+    } catch (error) {
+        console.error('Error detecting internal transfers:', error);
+        alert('❌ Failed to detect internal transfers. Please try again.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 Detect Internal Transfers';
+    }
+}
+
+function buildFilterParams() {
+    const params = new URLSearchParams();
+    
+    const excludeInvestment = document.getElementById('excludeInvestmentToggle')?.checked || false;
+    const excludeInternal = document.getElementById('excludeInternalTransfersToggle')?.checked || false;
+    
+    if (excludeInvestment) params.append('exclude_investment', 'true');
+    if (excludeInternal) params.append('exclude_internal_transfers', 'true');
+    
+    return params.toString();
+}
+
+/* Dark Mode Functions */
+function toggleDarkMode() {
+    const isDarkMode = document.body.classList.toggle('dark-mode');
+    const toggle = document.getElementById('darkModeToggle');
+    const icon = document.getElementById('darkModeIcon');
+    
+    // Save preference to localStorage
+    localStorage.setItem('darkMode', isDarkMode);
+    
+    // Update icon
+    icon.textContent = isDarkMode ? '☀️' : '🌙';
+    
+    // Update Chart.js text colors after DOM update
+    setTimeout(() => updateChartColors(), 10);
+}
+
+function initializeDarkMode() {
+    // Load dark mode preference from localStorage
+    const isDarkMode = localStorage.getItem('darkMode') === 'true';
+    const toggle = document.getElementById('darkModeToggle');
+    const icon = document.getElementById('darkModeIcon');
+    
+    if (isDarkMode) {
+        document.body.classList.add('dark-mode');
+        toggle.checked = true;
+        icon.textContent = '☀️';
+    } else {
+        document.body.classList.remove('dark-mode');
+        toggle.checked = false;
+        icon.textContent = '🌙';
+    }
+    
+    // Apply chart colors after setting theme
+    updateChartColors();
+}
+
+function updateChartColors() {
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    const bgColor = isDarkMode ? '#2d2d2d' : 'transparent';
+    const gridColor = isDarkMode ? 'rgba(100, 100, 100, 0.2)' : 'rgba(200, 200, 200, 0.2)';
+    // Use bright white for dark mode, dark for light mode
+    const brightTextColor = isDarkMode ? '#ffffff' : '#2c3e50';
+    
+    console.log('Updating chart colors. Dark mode:', isDarkMode, 'Text color:', brightTextColor, 'Charts:', chartInstances.length);
+    
+    // Update all tracked chart instances with new colors
+    chartInstances.forEach(function(chart) {
+        if (chart && chart.options) {
+            // Update legend colors
+            chart.options.plugins = chart.options.plugins || {};
+            chart.options.plugins.legend = chart.options.plugins.legend || {};
+            chart.options.plugins.legend.labels = chart.options.plugins.legend.labels || {};
+            chart.options.plugins.legend.labels.color = brightTextColor;
+            chart.options.plugins.legend.labels.font = chart.options.plugins.legend.labels.font || {};
+            chart.options.plugins.legend.labels.font.size = 12;
+            chart.options.plugins.legend.labels.font.weight = '500';
+            
+            // Update title colors
+            chart.options.plugins.title = chart.options.plugins.title || {};
+            chart.options.plugins.title.color = brightTextColor;
+            chart.options.plugins.title.font = chart.options.plugins.title.font || {};
+            chart.options.plugins.title.font.size = 14;
+            chart.options.plugins.title.font.weight = 'bold';
+            
+            // Update tooltip colors
+            chart.options.plugins.tooltip = chart.options.plugins.tooltip || {};
+            chart.options.plugins.tooltip.titleColor = brightTextColor;
+            chart.options.plugins.tooltip.bodyColor = brightTextColor;
+            chart.options.plugins.tooltip.backgroundColor = isDarkMode ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.9)';
+            
+            // Update scales
+            chart.options.scales = chart.options.scales || {};
+            if (chart.options.scales.y) {
+                chart.options.scales.y.ticks = chart.options.scales.y.ticks || {};
+                chart.options.scales.y.ticks.color = brightTextColor;
+                chart.options.scales.y.ticks.font = chart.options.scales.y.ticks.font || {};
+                chart.options.scales.y.ticks.font.size = 11;
+                chart.options.scales.y.grid = chart.options.scales.y.grid || {};
+                chart.options.scales.y.grid.color = gridColor;
+                
+                // Y-axis title
+                chart.options.scales.y.title = chart.options.scales.y.title || {};
+                chart.options.scales.y.title.color = brightTextColor;
+                chart.options.scales.y.title.font = chart.options.scales.y.title.font || {};
+                chart.options.scales.y.title.font.size = 12;
+                chart.options.scales.y.title.font.weight = '500';
+            }
+            if (chart.options.scales.x) {
+                chart.options.scales.x.ticks = chart.options.scales.x.ticks || {};
+                chart.options.scales.x.ticks.color = brightTextColor;
+                chart.options.scales.x.ticks.font = chart.options.scales.x.ticks.font || {};
+                chart.options.scales.x.ticks.font.size = 11;
+                chart.options.scales.x.grid = chart.options.scales.x.grid || {};
+                chart.options.scales.x.grid.color = gridColor;
+                
+                // X-axis title
+                chart.options.scales.x.title = chart.options.scales.x.title || {};
+                chart.options.scales.x.title.color = brightTextColor;
+                chart.options.scales.x.title.font = chart.options.scales.x.title.font || {};
+                chart.options.scales.x.title.font.size = 12;
+                chart.options.scales.x.title.font.weight = '500';
+            }
+            
+            // Update chart canvas background
+            if (chart.canvas) {
+                chart.canvas.style.backgroundColor = bgColor;
+            }
+            
+            chart.update();
+        }
+    });
+}
+
+/* Loading Popup Functions */
+function showLoading() {
+    document.getElementById('loadingOverlay').classList.add('active');
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').classList.remove('active');
+}
+
+
 async function loadSummaryStats() {
-    // Current balance
     const balances = await fetchAPI('/transactions/balances/net');
     if (balances && balances.balances_by_currency) {
         const currencies = Object.keys(balances.balances_by_currency);
@@ -178,24 +940,29 @@ async function loadSummaryStats() {
         }
     }
     
-    // This month stats
-    const start = new Date();
-    start.setDate(1);
-    const stats = await fetchAPI(`/reports/statistics?start_date=${start.toISOString()}`);
+    // Period stats
+    const startStr = dateToString(dateRangeState.startDate);
+    const endStr = dateToString(dateRangeState.endDate);
+    const filterParams = buildFilterParams();
+    const separator = filterParams ? '&' : '';
+    const stats = await fetchAPI(`/reports/statistics?start_date=${startStr}T00:00:00Z&end_date=${endStr}T23:59:59Z${separator}${filterParams}`);
     if (stats) {
-        document.getElementById('monthIncome').textContent = `+${stats.total_income.toFixed(2)}`;
-        document.getElementById('monthExpenses').textContent = stats.total_expenses.toFixed(2);
+        document.getElementById('periodIncome').textContent = `+${Math.abs(stats.total_income).toFixed(2)}`;
+        document.getElementById('periodExpenses').textContent = Math.abs(stats.total_expenses).toFixed(2);
         
         const net = stats.net;
-        const netEl = document.getElementById('monthNet');
+        const netEl = document.getElementById('periodNet');
         netEl.textContent = (net >= 0 ? '+' : '') + net.toFixed(2);
         netEl.className = 'value ' + (net >= 0 ? 'positive' : 'negative');
     }
 }
 
-async function loadCashflowChart(period = '6months') {
-    const dateRange = getDateRange(period);
-    const cashflow = await fetchAPI(`/reports/cashflow?start_date=${dateRange.start}&end_date=${dateRange.end}`);
+async function loadCashflowChart() {
+    const startStr = dateToString(dateRangeState.startDate);
+    const endStr = dateToString(dateRangeState.endDate);
+    const filterParams = buildFilterParams();
+    const separator = filterParams ? '&' : '';
+    const cashflow = await fetchAPI(`/reports/cashflow?start_date=${startStr}T00:00:00Z&end_date=${endStr}T23:59:59Z${separator}${filterParams}`);
     
     if (!cashflow || cashflow.length === 0) {
         console.log('No cashflow data');
@@ -208,7 +975,6 @@ async function loadCashflowChart(period = '6months') {
     const net = cashflow.map(d => d.net);
     
     const ctx = document.getElementById('cashflowChart');
-    
     if (cashflowChart) cashflowChart.destroy();
     
     cashflowChart = new Chart(ctx, {
@@ -262,16 +1028,18 @@ async function loadCashflowChart(period = '6months') {
     });
 }
 
-async function loadCategoryCharts(period = '30days') {
-    const dateRange = getDateRange(period);
-    const categories = await fetchAPI(`/reports/categories?start_date=${dateRange.start}&end_date=${dateRange.end}`);
+async function loadCategoryCharts() {
+    const startStr = dateToString(dateRangeState.startDate);
+    const endStr = dateToString(dateRangeState.endDate);
+    const filterParams = buildFilterParams();
+    const separator = filterParams ? '&' : '';
+    const categories = await fetchAPI(`/reports/categories?start_date=${startStr}T00:00:00Z&end_date=${endStr}T23:59:59Z${separator}${filterParams}`);
     
     if (!categories || categories.length === 0) {
         console.log('No category data');
         return;
     }
     
-    // Filter out income categories and get top expenses
     const expenseCategories = categories
         .filter(c => c.amount < 0)
         .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
@@ -284,7 +1052,6 @@ async function loadCategoryCharts(period = '30days') {
         '#1abc9c', '#34495e', '#e67e22', '#95a5a6', '#d35400'
     ];
     
-    // Pie Chart
     const pieCtx = document.getElementById('categoryPieChart');
     if (categoryPieChart) categoryPieChart.destroy();
     
@@ -305,14 +1072,12 @@ async function loadCategoryCharts(period = '30days') {
                     position: 'right',
                 },
                 title: {
-                    display: true,
-                    text: 'Category Distribution'
+                    display: false
                 }
             }
         }
     });
     
-    // Bar Chart
     const barCtx = document.getElementById('categoryBarChart');
     if (categoryBarChart) categoryBarChart.destroy();
     
@@ -334,8 +1099,7 @@ async function loadCategoryCharts(period = '30days') {
                     display: false
                 },
                 title: {
-                    display: true,
-                    text: 'Top Spending Categories'
+                    display: false
                 }
             },
             scales: {
@@ -348,12 +1112,14 @@ async function loadCategoryCharts(period = '30days') {
 }
 
 async function loadNetWorthChart() {
-    const dateRange = getDateRange('12months');
-    const cashflow = await fetchAPI(`/reports/cashflow?start_date=${dateRange.start}&end_date=${dateRange.end}`);
+    const startStr = dateToString(dateRangeState.startDate);
+    const endStr = dateToString(dateRangeState.endDate);
+    const filterParams = buildFilterParams();
+    const separator = filterParams ? '&' : '';
+    const cashflow = await fetchAPI(`/reports/cashflow?start_date=${startStr}T00:00:00Z&end_date=${endStr}T23:59:59Z${separator}${filterParams}`);
     
     if (!cashflow || cashflow.length === 0) return;
     
-    // Calculate cumulative net worth
     let netWorth = 0;
     const netWorthData = cashflow.map(d => {
         netWorth += d.net;
@@ -394,16 +1160,12 @@ async function loadNetWorthChart() {
 }
 
 async function loadWeeklyChart() {
-    // Generate weekly data from transactions
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 84); // 12 weeks
-    
-    const transactions = await fetchAPI(`/transactions?date_from=${startDate.toISOString()}&date_to=${endDate.toISOString()}&limit=1000`);
+    const startStr = dateToString(dateRangeState.startDate);
+    const endStr = dateToString(dateRangeState.endDate);
+    const transactions = await fetchAPI(`/transactions?date_from=${startStr}T00:00:00Z&date_to=${endStr}T23:59:59Z&limit=50000`);
     
     if (!transactions || transactions.length === 0) return;
     
-    // Group by week
     const weeks = {};
     transactions.forEach(tx => {
         const date = new Date(tx.booking_date);
@@ -467,37 +1229,45 @@ async function loadWeeklyChart() {
     });
 }
 
-function setCashflowPeriod(period) {
-    cashflowPeriod = period;
-    document.querySelectorAll('.card').forEach((card, index) => {
-        if (card.innerText.includes('Income vs Expenses')) {
-            card.querySelectorAll('.period-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            card.querySelectorAll(`[onclick*="${period}"]`)[0].classList.add('active');
-        }
-    });
-    loadCashflowChart(period);
+async function loadAllCharts() {
+    // Clear previous chart instances
+    chartInstances = [];
+    
+    // Destroy existing charts before recreating
+    if (cashflowChart) cashflowChart.destroy();
+    if (categoryPieChart) categoryPieChart.destroy();
+    if (categoryBarChart) categoryBarChart.destroy();
+    if (netWorthChart) netWorthChart.destroy();
+    if (weeklyChart) weeklyChart.destroy();
+    
+    showLoading();
+    try {
+        await loadSummaryStats();
+        await loadCashflowChart();
+        chartInstances.push(cashflowChart);
+        
+        await loadCategoryCharts();
+        chartInstances.push(categoryPieChart);
+        chartInstances.push(categoryBarChart);
+        
+        await loadNetWorthChart();
+        chartInstances.push(netWorthChart);
+        
+        await loadWeeklyChart();
+        chartInstances.push(weeklyChart);
+        
+        // Apply dark mode colors to all newly created charts
+        updateChartColors();
+    } finally {
+        hideLoading();
+    }
 }
 
-function setCategoryPeriod(period) {
-    categoryPeriod = period;
-    document.querySelectorAll('.card').forEach((card, index) => {
-        if (card.innerText.includes('Spending by Category')) {
-            card.querySelectorAll('.period-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            card.querySelectorAll(`[onclick*="${period}"]`)[0].classList.add('active');
-        }
-    });
-    loadCategoryCharts(period);
-}
-
-// Initialize all charts
-loadSummaryStats();
-loadCashflowChart(cashflowPeriod);
-loadCategoryCharts(categoryPeriod);
-loadNetWorthChart();
-loadWeeklyChart();
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    initializeDarkMode();
+    initializeDateRange();
+    loadAllCharts();
+});
 </script>
 {% endblock %}

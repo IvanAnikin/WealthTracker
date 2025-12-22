@@ -80,6 +80,7 @@ class Account(Base):
     account_type = Column(String(50), nullable=True)  # e.g., "Raiffeisen main", "Revolut CZK", "Revolut Crypto"
     owner_name = Column(String(255), nullable=True)
     source_type = Column(String(50), nullable=False, default="api")  # api, csv_manual
+    account_purpose = Column(String(50), nullable=False, default="spending")  # spending, investment, savings
     initial_balance_amount = Column(Float, nullable=True)
     initial_balance_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -124,6 +125,7 @@ class Transaction(Base):
     currency = Column(String(3), nullable=False)
     description = Column(Text, nullable=True)
     counterparty = Column(String(255), nullable=True)
+    is_internal_transfer = Column(Boolean, default=False, nullable=False)  # True if transfer between user's own accounts
     status = Column(String(50), nullable=False, default="booked")  # booked, pending
     raw_payload = Column(JSON, nullable=True)
     hash = Column(String(64), nullable=False)
