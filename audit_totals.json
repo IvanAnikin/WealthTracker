@@ -1,0 +1,66 @@
+{
+  "root": "/Users/ivananikin/Documents/WealthTracker",
+  "file_count": 6,
+  "per_file": {
+    "/Users/ivananikin/Documents/WealthTracker/transactions_csvs/Revolut/revolut.csv": {
+      "CZK": {
+        "income": 1704746.5000000002,
+        "expenses": 1709307.609999997
+      },
+      "EUR": {
+        "income": 39477.789999999986,
+        "expenses": 39427.13999999997
+      },
+      "USD": {
+        "income": 15680.76,
+        "expenses": 15664.98
+      }
+    },
+    "/Users/ivananikin/Documents/WealthTracker/transactions_csvs/Revolut/revolut_crypto2.csv": {
+      "USD": {
+        "income": 1035.59,
+        "expenses": 0.0
+      }
+    },
+    "/Users/ivananikin/Documents/WealthTracker/transactions_csvs/Revolut/Revolut_stock2.csv": {
+      "USD": {
+        "income": 536.5600000000001,
+        "expenses": 66.0
+      },
+      "EUR": {
+        "income": 100.45,
+        "expenses": 0.0
+      }
+    },
+    "/Users/ivananikin/Documents/WealthTracker/transactions_csvs/Revolut/Revolut_crypto.csv": {
+      "UNKNOWN": {
+        "income": 1200.4600000000003,
+        "expenses": 2113.2599999999998
+      }
+    },
+    "/Users/ivananikin/Documents/WealthTracker/transactions_csvs/Revolut/Revolut_stock.csv": {},
+    "/Users/ivananikin/Documents/WealthTracker/transactions_csvs/Reiffeisen/Raiffeisen.csv": {}
+  },
+  "summary_by_currency": {
+    "CZK": {
+      "income": 1704746.5,
+      "expenses": 1709307.61,
+      "net": -4561.11
+    },
+    "EUR": {
+      "income": 39578.24,
+      "expenses": 39427.14,
+      "net": 151.1
+    },
+    "USD": {
+      "income": 17252.91,
+      "expenses": 15730.98,
+      "net": 1521.93
+    },
+    "UNKNOWN": {
+      "income": 1200.46,
+      "expenses": 2113.26,
+      "net": -912.8
+    }
+  }
+}
