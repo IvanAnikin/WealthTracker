@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - WealthTracker{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem;">Dashboard</h1>
+
+<div class="alert alert-info">
+    <strong>📊 Overview:</strong> Welcome to WealthTracker! Connect your banks to start tracking your finances.
+</div>
+
+<div class="grid">
+    <div class="stat-card">
+        <h3>TOTAL BALANCE</h3>
+        <div class="value">Loading...</div>
+        <p style="color: #7f8c8d; font-size: 0.9rem; margin-top: 0.5rem;">Across all accounts</p>
+    </div>
+    
+    <div class="stat-card">
+        <h3>CONNECTED ACCOUNTS</h3>
+        <div class="value">0</div>
+        <p style="color: #7f8c8d; font-size: 0.9rem; margin-top: 0.5rem;">Active connections</p>
+    </div>
+    
+    <div class="stat-card">
+        <h3>THIS MONTH</h3>
+        <div class="value positive">+0</div>
+        <p style="color: #7f8c8d; font-size: 0.9rem; margin-top: 0.5rem;">Net cashflow</p>
+    </div>
+    
+    <div class="stat-card">
+        <h3>TRANSACTIONS</h3>
+        <div class="value">0</div>
+        <p style="color: #7f8c8d; font-size: 0.9rem; margin-top: 0.5rem;">Last 30 days</p>
+    </div>
+</div>
+
+<div class="card">
+    <h2>🏦 Quick Actions</h2>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <a href="/ui/banks/connect" class="btn btn-success">➕ Connect Bank</a>
+        <button onclick="syncAccounts()" class="btn">🔄 Sync Accounts</button>
+        <a href="/ui/transactions" class="btn btn-secondary">📊 View Transactions</a>
+        <a href="/export/transactions.csv" class="btn btn-secondary">💾 Export CSV</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>📈 Recent Transactions</h2>
+    <div id="recent-transactions">
+        <p style="color: #7f8c8d;">Loading transactions...</p>
+    </div>
+</div>
+
+<div class="card">
+    <h2>💳 Connected Accounts</h2>
+    <div id="accounts-list">
+        <p style="color: #7f8c8d;">Loading accounts...</p>
+    </div>
+</div>
+
+<script>
+// Get token from localStorage (you'll need to implement proper authentication)
+const token = localStorage.getItem('token') || 'demo-token';
+
+async function fetchAPI(endpoint) {
+    try {
+        const response = await fetch(`http://localhost:8000${endpoint}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        if (!response.ok) {
+            throw new Error('API request failed');
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        return null;
+    }
+}
+
+async function loadDashboard() {
+    // Load accounts
+    const accounts = await fetchAPI('/banks/accounts');
+    if (accounts && accounts.length > 0) {
+        document.querySelector('.stat-card:nth-child(2) .value').textContent = accounts.length;
+        
+        let accountsHTML = '<div style="display: grid; gap: 1rem;">';
+        accounts.forEach(account => {
+            accountsHTML += `
+                <div style="padding: 1rem; border: 1px solid #ddd; border-radius: 4px;">
+                    <strong>${account.name || 'Account ' + account.id.substring(0, 8)}</strong>
+                    <p style="color: #7f8c8d; font-size: 0.9rem;">${account.iban || 'No IBAN'} - ${account.currency}</p>
+                </div>
+            `;
+        });
+        accountsHTML += '</div>';
+        document.getElementById('accounts-list').innerHTML = accountsHTML;
+    } else {
+        document.getElementById('accounts-list').innerHTML = '<p style="color: #7f8c8d;">No accounts connected. <a href="/ui/banks/connect">Connect a bank</a> to get started.</p>';
+    }
+    
+    // Load recent transactions
+    const transactions = await fetchAPI('/transactions?limit=10');
+    if (transactions && transactions.length > 0) {
+        let txHTML = '<table><thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
+        transactions.forEach(tx => {
+            const amountClass = tx.amount > 0 ? 'positive' : 'negative';
+            const date = new Date(tx.booking_date).toLocaleDateString();
+            txHTML += `
+                <tr>
+                    <td>${date}</td>
+                    <td>${tx.description || 'N/A'}</td>
+                    <td class="${amountClass}">${tx.amount.toFixed(2)} ${tx.currency}</td>
+                    <td>${tx.status}</td>
+                </tr>
+            `;
+        });
+        txHTML += '</tbody></table>';
+        document.getElementById('recent-transactions').innerHTML = txHTML;
+    } else {
+        document.getElementById('recent-transactions').innerHTML = '<p style="color: #7f8c8d;">No transactions yet. Sync your accounts to see transactions.</p>';
+    }
+    
+    // Load balance
+    const balances = await fetchAPI('/transactions/balances/net');
+    if (balances && balances.balances_by_currency) {
+        const currencies = Object.keys(balances.balances_by_currency);
+        if (currencies.length > 0) {
+            const currency = currencies[0];
+            const balance = balances.balances_by_currency[currency];
+            document.querySelector('.stat-card:nth-child(1) .value').textContent = 
+                balance.toFixed(2) + ' ' + currency;
+        }
+    }
+    
+    // Load statistics
+    const stats = await fetchAPI('/reports/statistics');
+    if (stats) {
+        document.querySelector('.stat-card:nth-child(4) .value').textContent = stats.total_transactions || 0;
+        
+        if (stats.net) {
+            const netElement = document.querySelector('.stat-card:nth-child(3) .value');
+            const net = stats.net;
+            netElement.textContent = (net > 0 ? '+' : '') + net.toFixed(2);
+            netElement.className = 'value ' + (net > 0 ? 'positive' : 'negative');
+        }
+    }
+}
+
+async function syncAccounts() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳ Syncing...';
+    
+    const result = await fetchAPI('/sync');
+    
+    if (result && result.status === 'success') {
+        alert(`Sync complete! ${result.transactions_added} new transactions added.`);
+        loadDashboard();
+    } else {
+        alert('Sync failed. Please try again.');
+    }
+    
+    btn.disabled = false;
+    btn.textContent = '🔄 Sync Accounts';
+}
+
+// Load dashboard on page load
+loadDashboard();
+</script>
+{% endblock %}

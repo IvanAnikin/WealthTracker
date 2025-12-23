@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - WealthTracker{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem;">⚙️ Settings</h1>
+
+<!-- Categories Section -->
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>📦 Categories</h2>
+        <button onclick="showAddCategory()" class="btn btn-success">➕ Add Category</button>
+    </div>
+    
+    <div id="categoriesList" style="margin-top: 1rem;">
+        <p style="color: #7f8c8d;">Loading categories...</p>
+    </div>
+</div>
+
+<!-- Categorization Rules -->
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>📋 Auto-Categorization Rules</h2>
+        <button onclick="showAddRule()" class="btn btn-success">➕ Add Rule</button>
+    </div>
+    
+    <div class="alert alert-info" style="margin-top: 1rem;">
+        <strong>ℹ️ How it works:</strong> Rules automatically assign categories to transactions based on patterns in descriptions or counterparty names.
+    </div>
+    
+    <div id="rulesList" style="margin-top: 1rem;">
+        <p style="color: #7f8c8d;">Loading rules...</p>
+    </div>
+</div>
+
+<!-- Account Settings -->
+<div class="card">
+    <h2>👤 Account Settings</h2>
+    <div style="margin-top: 1rem;">
+        <p><strong>Email:</strong> <span id="userEmail">Loading...</span></p>
+        <button onclick="logout()" class="btn btn-danger" style="margin-top: 1rem;">🚪 Logout</button>
+    </div>
+</div>
+
+<!-- Add Category Modal -->
+<div id="addCategoryModal" style="
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+">
+    <div class="card" style="max-width: 500px; margin: 2rem;">
+        <h2>Add Category</h2>
+        <form id="categoryForm" onsubmit="addCategory(event)">
+            <div class="form-group">
+                <label for="categoryName">Category Name</label>
+                <input type="text" id="categoryName" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="categoryIcon">Icon (emoji)</label>
+                <input type="text" id="categoryIcon" placeholder="e.g., 🍔" maxlength="4">
+            </div>
+            
+            <div class="form-group">
+                <label for="categoryColor">Color</label>
+                <input type="color" id="categoryColor" value="#3498db">
+            </div>
+            
+            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <button type="submit" class="btn btn-success">Add Category</button>
+                <button type="button" onclick="closeModal('addCategoryModal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Rule Modal -->
+<div id="addRuleModal" style="
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+">
+    <div class="card" style="max-width: 500px; margin: 2rem;">
+        <h2>Add Categorization Rule</h2>
+        <form id="ruleForm" onsubmit="addRule(event)">
+            <div class="form-group">
+                <label for="rulePattern">Pattern</label>
+                <input type="text" id="rulePattern" placeholder="e.g., amazon, supermarket" required>
+                <small style="color: #7f8c8d;">Text to match in transaction</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="ruleField">Match Field</label>
+                <select id="ruleField" required>
+                    <option value="description">Description</option>
+                    <option value="counterparty">Counterparty</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="ruleCategory">Category</label>
+                <select id="ruleCategory" required>
+                    <option value="">Select category...</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="rulePriority">Priority (higher = first)</label>
+                <input type="number" id="rulePriority" value="0">
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="ruleIsRegex"> Use regex pattern
+                </label>
+            </div>
+            
+            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <button type="submit" class="btn btn-success">Add Rule</button>
+                <button type="button" onclick="closeModal('addRuleModal')" class="btn btn-secondary">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+let categories = [];
+
+async function fetchAPI(endpoint, options = {}) {
+    try {
+        const response = await fetch(`http://localhost:8000${endpoint}`, {
+            ...options,
+            headers: {
+                'Authorization': `******`,
+                ...options.headers
+            }
+        });
+        if (!response.ok) throw new Error('API request failed');
+        return await response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        return null;
+    }
+}
+
+async function loadUser() {
+    const user = await fetchAPI('/auth/me');
+    if (user) {
+        document.getElementById('userEmail').textContent = user.email;
+    }
+}
+
+async function loadCategories() {
+    categories = await fetchAPI('/categories/');
+    
+    if (!categories || categories.length === 0) {
+        document.getElementById('categoriesList').innerHTML = '<p style="color: #7f8c8d;">No categories yet.</p>';
+        return;
+    }
+    
+    let html = '<div style="display: grid; gap: 0.5rem;">';
+    
+    categories.forEach(cat => {
+        html += `
+            <div style="
+                padding: 1rem;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            ">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    ${cat.icon ? `<span style="font-size: 1.5rem;">${cat.icon}</span>` : ''}
+                    <div>
+                        <strong>${cat.name}</strong>
+                        ${cat.color ? `<span style="
+                            display: inline-block;
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 50%;
+                            background: ${cat.color};
+                            margin-left: 0.5rem;
+                        "></span>` : ''}
+                    </div>
+                </div>
+                <button onclick="deleteCategory('${cat.id}')" class="btn btn-danger" style="padding: 0.4rem 0.8rem; font-size: 0.9rem;">
+                    Delete
+                </button>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    document.getElementById('categoriesList').innerHTML = html;
+    
+    // Update rule category dropdown
+    const select = document.getElementById('ruleCategory');
+    select.innerHTML = '<option value="">Select category...</option>';
+    categories.forEach(cat => {
+        const option = document.createElement('option');
+        option.value = cat.id;
+        option.textContent = (cat.icon ? cat.icon + ' ' : '') + cat.name;
+        select.appendChild(option);
+    });
+}
+
+async function loadRules() {
+    const rules = await fetchAPI('/categories/rules');
+    
+    if (!rules || rules.length === 0) {
+        document.getElementById('rulesList').innerHTML = '<p style="color: #7f8c8d;">No rules yet. Add rules to automatically categorize transactions.</p>';
+        return;
+    }
+    
+    let html = '<div style="display: grid; gap: 0.5rem;">';
+    
+    rules.forEach(rule => {
+        const category = categories.find(c => c.id === rule.category_id);
+        const categoryName = category ? category.name : 'Unknown';
+        
+        html += `
+            <div style="
+                padding: 1rem;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 1rem;
+                align-items: center;
+            ">
+                <div>
+                    <div style="margin-bottom: 0.5rem;">
+                        <strong>Pattern:</strong> <code style="background: #ecf0f1; padding: 0.2rem 0.5rem; border-radius: 4px;">${rule.pattern}</code>
+                        ${rule.is_regex ? '<span style="color: #3498db; font-size: 0.85rem; margin-left: 0.5rem;">regex</span>' : ''}
+                    </div>
+                    <div style="color: #7f8c8d; font-size: 0.9rem;">
+                        Match in: ${rule.field} → Category: ${categoryName} (Priority: ${rule.priority})
+                    </div>
+                </div>
+                <button onclick="deleteRule('${rule.id}')" class="btn btn-danger" style="padding: 0.4rem 0.8rem; font-size: 0.9rem;">
+                    Delete
+                </button>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    document.getElementById('rulesList').innerHTML = html;
+}
+
+function showAddCategory() {
+    document.getElementById('addCategoryModal').style.display = 'flex';
+}
+
+function showAddRule() {
+    document.getElementById('addRuleModal').style.display = 'flex';
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+async function addCategory(event) {
+    event.preventDefault();
+    
+    const data = {
+        name: document.getElementById('categoryName').value,
+        icon: document.getElementById('categoryIcon').value,
+        color: document.getElementById('categoryColor').value
+    };
+    
+    const result = await fetchAPI('/categories/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    
+    if (result) {
+        closeModal('addCategoryModal');
+        document.getElementById('categoryForm').reset();
+        await loadCategories();
+        alert('Category added successfully!');
+    }
+}
+
+async function addRule(event) {
+    event.preventDefault();
+    
+    const data = {
+        pattern: document.getElementById('rulePattern').value,
+        field: document.getElementById('ruleField').value,
+        category_id: document.getElementById('ruleCategory').value,
+        priority: parseInt(document.getElementById('rulePriority').value),
+        is_regex: document.getElementById('ruleIsRegex').checked
+    };
+    
+    const result = await fetchAPI('/categories/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    
+    if (result) {
+        closeModal('addRuleModal');
+        document.getElementById('ruleForm').reset();
+        await loadRules();
+        alert('Rule added successfully!');
+    }
+}
+
+async function deleteCategory(id) {
+    if (!confirm('Are you sure you want to delete this category?')) return;
+    
+    await fetchAPI(`/categories/${id}`, { method: 'DELETE' });
+    await loadCategories();
+}
+
+async function deleteRule(id) {
+    if (!confirm('Are you sure you want to delete this rule?')) return;
+    
+    await fetchAPI(`/categories/rules/${id}`, { method: 'DELETE' });
+    await loadRules();
+}
+
+function logout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/ui/login';
+}
+
+// Initialize
+loadUser();
+loadCategories();
+loadRules();
+</script>
+{% endblock %}
