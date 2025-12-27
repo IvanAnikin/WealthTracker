@@ -220,6 +220,7 @@ def detect_and_mark_internal_transfers(db: Session, user_id: str) -> int:
     
     revolut_account_ids = {acc.id for acc in user_accounts if acc.name and 'revolut' in acc.name.lower()}
     raiffeisen_account_ids = {acc.id for acc in user_accounts if acc.name and 'raiffeisen' in acc.name.lower()}
+    kb_account_ids = {acc.id for acc in user_accounts if acc.name and ('komer' in acc.name.lower() or 'kb ' in acc.name.lower())}
     
     for tx in user_transactions:
         if tx.id in processed_pairs:
@@ -251,11 +252,12 @@ def detect_and_mark_internal_transfers(db: Session, user_id: str) -> int:
         if tx.account_id in revolut_account_ids and tx.amount > 0:
             if 'topup' in description_lower or 'top-up' in description_lower or 'top up' in description_lower:
                 # Look for matching card payment in Raiffeisen within 7 days before
-                date_start = tx.booking_date - timedelta(days=7)
-                date_end = tx.booking_date + timedelta(days=1)
+                # Increase window to catch cross-month matches and KB card payments
+                date_start = tx.booking_date - timedelta(days=30)
+                date_end = tx.booking_date + timedelta(days=3)
                 
                 matching_tx = db.query(Transaction).filter(
-                    Transaction.account_id.in_(raiffeisen_account_ids),
+                    Transaction.account_id.in_(raiffeisen_account_ids.union(kb_account_ids)),
                     Transaction.amount == -tx.amount,  # Same amount but negative
                     Transaction.booking_date >= date_start,
                     Transaction.booking_date <= date_end,
@@ -266,18 +268,19 @@ def detect_and_mark_internal_transfers(db: Session, user_id: str) -> int:
                     # Check if the Raiffeisen transaction mentions Revolut
                     raif_desc = (matching_tx.description or '').lower()
                     raif_counter = (matching_tx.counterparty or '').lower()
-                    if 'revolut' in raif_desc or 'revolut' in raif_counter:
+                    # Prefer Revolut mention, but accept exact amount match as internal
+                    if 'revolut' in raif_desc or 'revolut' in raif_counter or True:
                         is_internal = True
         
         # Pattern 3: Card payments to Revolut from Raiffeisen
-        if tx.account_id in raiffeisen_account_ids and tx.amount < 0:
+        if (tx.account_id in raiffeisen_account_ids or tx.account_id in kb_account_ids) and tx.amount < 0:
             if 'revolut' in description_lower or 'revolut' in counterparty_lower:
                 # This is a card payment to Revolut
                 is_internal = True
                 
                 # Try to find matching topup at Revolut
-                date_start = tx.booking_date
-                date_end = tx.booking_date + timedelta(days=7)
+                date_start = tx.booking_date - timedelta(days=1)
+                date_end = tx.booking_date + timedelta(days=30)
                 
                 matching_tx = db.query(Transaction).filter(
                     Transaction.account_id.in_(revolut_account_ids),

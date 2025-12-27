@@ -16,16 +16,29 @@ def _rate_map_for_target(currencies, target_currency):
 
 def _exclude_internal_query(query):
     """Apply additional filters to drop FX conversions and Revolut wallet moves when excluding internal transfers."""
-    exclusion_patterns = [
+    exclusion_patterns_desc = [
         "%exchanged to %",
         "%revolut bank uab%",
         "%revolut digital assets%",
         "%transfer to revolut digital assets%",
         "%transfer to my account%",
         "%konverze%",
+        "%top-up%",
+        "%topup%",
+        "%platba kartou%revolut%",
+        "%platba na internetu%revolut%",
+        "%apple pay%revolut%",
     ]
-    for pat in exclusion_patterns:
+    for pat in exclusion_patterns_desc:
         query = query.filter(~Transaction.description.ilike(pat))
+
+    exclusion_patterns_counterparty = [
+        "%revolut bank uab%",
+        "%revolut digital assets%",
+        "%revolut%",
+    ]
+    for pat in exclusion_patterns_counterparty:
+        query = query.filter(~Transaction.counterparty.ilike(pat))
     return query
 
 
@@ -34,7 +47,7 @@ def get_monthly_cashflow(
     user_id: str,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    account_id: Optional[str] = None,
+    account_id: Optional[list] = None,
     exclude_investment: bool = False,
     exclude_internal_transfers: bool = False,
     currency: Optional[str] = None
@@ -47,7 +60,7 @@ def get_monthly_cashflow(
         user_id: User ID
         start_date: Start date for report
         end_date: End date for report
-        account_id: Optional account filter
+        account_id: Optional list of account IDs to filter
         exclude_investment: Exclude investment accounts
         exclude_internal_transfers: Exclude internal transfers
     
@@ -85,7 +98,11 @@ def get_monthly_cashflow(
         query = _exclude_internal_query(query)
     
     if account_id:
-        query = query.filter(Transaction.account_id == account_id)
+        # Support both single string and list of IDs
+        if isinstance(account_id, list) and account_id:
+            query = query.filter(Transaction.account_id.in_(account_id))
+        elif isinstance(account_id, str):
+            query = query.filter(Transaction.account_id == account_id)
 
     query = query.group_by('year', 'month', Account.currency)
 
@@ -123,7 +140,7 @@ def get_category_breakdown(
     user_id: str,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    account_id: Optional[str] = None,
+    account_id: Optional[list] = None,
     exclude_investment: bool = False,
     exclude_internal_transfers: bool = False,
     currency: Optional[str] = None
@@ -136,7 +153,7 @@ def get_category_breakdown(
         user_id: User ID
         start_date: Start date for report
         end_date: End date for report
-        account_id: Optional account filter
+        account_id: Optional list of account IDs to filter
         exclude_investment: Exclude investment accounts
         exclude_internal_transfers: Exclude internal transfers
     
@@ -176,7 +193,11 @@ def get_category_breakdown(
         query = _exclude_internal_query(query)
     
     if account_id:
-        query = query.filter(Transaction.account_id == account_id)
+        # Support both single string and list of IDs
+        if isinstance(account_id, list) and account_id:
+            query = query.filter(Transaction.account_id.in_(account_id))
+        elif isinstance(account_id, str):
+            query = query.filter(Transaction.account_id == account_id)
 
     query = query.group_by(Category.id, Category.name, Category.color, Category.icon, Account.currency)
 
@@ -317,6 +338,7 @@ def get_transaction_statistics(
     user_id: str,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
+    account_id: Optional[list] = None,
     exclude_investment: bool = False,
     exclude_internal_transfers: bool = False,
     currency: Optional[str] = None
@@ -329,6 +351,7 @@ def get_transaction_statistics(
         user_id: User ID
         start_date: Start date
         end_date: End date
+        account_id: Optional list of account IDs to filter
         exclude_investment: Exclude investment accounts
         exclude_internal_transfers: Exclude internal transfers
     
@@ -366,6 +389,13 @@ def get_transaction_statistics(
         query = query.filter(Transaction.is_internal_transfer == False)
         query = _exclude_internal_query(query)
     
+    if account_id:
+        # Support both single string and list of IDs
+        if isinstance(account_id, list) and account_id:
+            query = query.filter(Transaction.account_id.in_(account_id))
+        elif isinstance(account_id, str):
+            query = query.filter(Transaction.account_id == account_id)
+    
     query = query.group_by(Account.currency)
 
     results = query.all()
@@ -396,4 +426,84 @@ def get_transaction_statistics(
         'net': round(income - expenses, 2),
         'currency': target
     }
+
+
+def get_income_by_counterparty(
+    db: Session,
+    user_id: str,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    account_id: Optional[list] = None,
+    currency: Optional[str] = None
+) -> List[dict]:
+    """
+    Get income breakdown by counterparty, excluding internal transfers.
+    
+    Args:
+        db: Database session
+        user_id: User ID
+        start_date: Start date for report
+        end_date: End date for report
+        account_id: Optional list of account IDs to filter
+        currency: Target currency for conversion
+    
+    Returns:
+        List of income by counterparty data
+    """
+    if not end_date:
+        end_date = datetime.utcnow()
+    if not start_date:
+        start_date = end_date - timedelta(days=365)
+    
+    # Aggregate by counterparty and currency
+    query = db.query(
+        Transaction.counterparty,
+        Account.currency.label('currency'),
+        func.sum(Transaction.amount).label('total_amount'),
+        func.count(Transaction.id).label('tx_count')
+    ).join(Account, Transaction.account_id == Account.id).\
+        filter(
+            Account.user_id == user_id,
+            Transaction.status == 'booked',
+            Transaction.booking_date >= start_date,
+            Transaction.booking_date <= end_date,
+            Transaction.amount > 0,  # Income only
+            Transaction.is_internal_transfer == False  # Exclude internal transfers
+        )
+    
+    # Apply additional exclusion patterns for internal transfers
+    query = _exclude_internal_query(query)
+    
+    if account_id:
+        if isinstance(account_id, list) and account_id:
+            query = query.filter(Transaction.account_id.in_(account_id))
+        elif isinstance(account_id, str):
+            query = query.filter(Transaction.account_id == account_id)
+    
+    query = query.group_by(Transaction.counterparty, Account.currency)
+    
+    results = query.all()
+    
+    rate_map, target = _rate_map_for_target((r.currency for r in results), currency)
+    
+    # Aggregate by counterparty (sum across currencies after conversion)
+    buckets = {}
+    counts = {}
+    for row in results:
+        cp = row.counterparty or '<none>'
+        cur = (row.currency or 'USD').upper()
+        rate = rate_map.get(cur, 1.0)
+        amt_conv = float(row.total_amount or 0) * rate
+        buckets[cp] = buckets.get(cp, 0.0) + amt_conv
+        counts[cp] = counts.get(cp, 0) + int(row.tx_count or 0)
+    
+    breakdown_data = []
+    for cp, total in sorted(buckets.items(), key=lambda kv: kv[1], reverse=True):
+        breakdown_data.append({
+            'counterparty': cp,
+            'amount': round(total, 2),
+            'count': counts[cp]
+        })
+    
+    return breakdown_data
 

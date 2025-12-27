@@ -448,6 +448,56 @@
         background-color: #3d3d3d;
     }
     
+    /* Account Multiselect Styles */
+    .account-multiselect {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .account-checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.8rem;
+        background: var(--input-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.9rem;
+    }
+
+    .account-checkbox-label:hover {
+        background: var(--hover-bg);
+        border-color: #3498db;
+    }
+
+    .account-checkbox-label input[type="checkbox"] {
+        cursor: pointer;
+        margin: 0;
+    }
+
+    .account-checkbox-label input[type="checkbox"]:checked + span {
+        color: #3498db;
+        font-weight: 600;
+    }
+    
+    /* Apply Filters Button */
+    .apply-filters-btn {
+        transition: all 0.3s ease;
+    }
+    
+    .apply-filters-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.6) !important;
+    }
+    
+    .apply-filters-btn:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3) !important;
+    }
+    
     /* Chart container background */
     .chart-container {
         background: var(--input-bg);
@@ -513,15 +563,34 @@
 <!-- Filter Toggles -->
 <div class="filter-toggles">
     <label class="filter-toggle">
-        <input type="checkbox" id="excludeInvestmentToggle" class="toggle-checkbox" onchange="updateChartsFromInputs()" checked>
+        <input type="checkbox" id="excludeInvestmentToggle" class="toggle-checkbox" checked>
         <span class="toggle-icon">🏦</span>
         <span class="toggle-label">Exclude Investment Accounts</span>
     </label>
     <label class="filter-toggle">
-        <input type="checkbox" id="excludeInternalTransfersToggle" class="toggle-checkbox" onchange="updateChartsFromInputs()" checked>
+        <input type="checkbox" id="excludeInternalTransfersToggle" class="toggle-checkbox" checked>
         <span class="toggle-icon">🔄</span>
         <span class="toggle-label">Hide Internal Transfers</span>
     </label>
+</div>
+
+<!-- Account Multiselect Filter -->
+<div class="account-filter-container" style="margin-bottom: 1.5rem;">
+    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
+        <h3 style="margin: 0;">💳 Filter Accounts</h3>
+        <button class="reset-dates-btn" onclick="selectAllAccounts()" style="font-size: 0.9rem; padding: 0.4rem 0.8rem;">Select All</button>
+        <button class="reset-dates-btn" onclick="deselectAllAccounts()" style="font-size: 0.9rem; padding: 0.4rem 0.8rem;">Clear All</button>
+    </div>
+    <div id="accountMultiselect" class="account-multiselect" style="display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px;">
+        <p style="color: var(--text-color); margin: 0;">Loading accounts...</p>
+    </div>
+</div>
+
+<!-- Apply Filters Button -->
+<div style="margin-bottom: 1.5rem; text-align: center;">
+    <button onclick="applyFilters()" class="apply-filters-btn" style="padding: 0.8rem 2rem; font-size: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); transition: all 0.3s; font-weight: 600;">
+        🔍 Apply Filters
+    </button>
 </div>
 
 
@@ -538,12 +607,12 @@
     <div class="date-display">
         <div class="date-input-group">
             <label>Start Date</label>
-            <input type="date" id="startDateInput" onchange="updateChartsFromInputs()">
+            <input type="date" id="startDateInput">
         </div>
         <div class="date-separator">→</div>
         <div class="date-input-group">
             <label>End Date</label>
-            <input type="date" id="endDateInput" onchange="updateChartsFromInputs()">
+            <input type="date" id="endDateInput">
         </div>
     </div>
     
@@ -616,6 +685,19 @@
     </div>
 </div>
 
+<!-- Income Breakdown -->
+<div class="card">
+    <h2>💰 Income by Source</h2>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem;">
+        <div class="chart-container">
+            <canvas id="incomePieChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="incomeBarChart"></canvas>
+        </div>
+    </div>
+</div>
+
 <!-- Net Worth Trend -->
 <div class="card">
     <h2>📈 Net Worth Trend</h2>
@@ -640,7 +722,11 @@ const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:$
 // Track all chart instances for easy color updates
 let chartInstances = [];
 
-let cashflowChart, categoryPieChart, categoryBarChart, netWorthChart, weeklyChart;
+let cashflowChart, categoryPieChart, categoryBarChart, incomePieChart, incomeBarChart, netWorthChart, weeklyChart;
+
+// Account filter state
+let allAccounts = [];
+let selectedAccountIds = [];
 
 // Date range state
 let dateRangeState = {
@@ -779,8 +865,6 @@ function stopDrag() {
     
     document.removeEventListener('mousemove', handleDrag);
     document.removeEventListener('mouseup', stopDrag);
-    
-    updateChartsFromInputs();
 }
 
 function updateChartsFromInputs() {
@@ -797,7 +881,7 @@ function updateChartsFromInputs() {
 
 function resetDateRange() {
     initializeDateRange();
-    loadAllCharts();
+    applyFilters();
 }
 
 async function detectInternalTransfers() {
@@ -841,7 +925,66 @@ function buildFilterParams() {
     if (excludeInternal) params.append('exclude_internal_transfers', 'true');
     if (currency) params.append('currency', currency);
     
+    // Add selected account IDs
+    if (selectedAccountIds.length > 0 && selectedAccountIds.length < allAccounts.length) {
+        selectedAccountIds.forEach(id => params.append('account_id', id));
+    }
+    
     return params.toString();
+}
+
+/* Account Filter Functions */
+async function loadAccountsList() {
+    try {
+        const response = await fetch('/reports/accounts/list', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        allAccounts = data.accounts || [];
+        selectedAccountIds = allAccounts.map(a => a.id); // Select all by default
+        renderAccountMultiselect();
+    } catch (error) {
+        console.error('Error loading accounts:', error);
+    }
+}
+
+function renderAccountMultiselect() {
+    const container = document.getElementById('accountMultiselect');
+    if (!allAccounts.length) {
+        container.innerHTML = '<p>No accounts found</p>';
+        return;
+    }
+    
+    container.innerHTML = allAccounts.map(account => `
+        <label class="account-checkbox-label">
+            <input type="checkbox" 
+                   value="${account.id}"
+                   ${selectedAccountIds.includes(account.id) ? 'checked' : ''}
+                   onchange="updateAccountSelection()">
+            <span>${account.name} (${account.currency})</span>
+        </label>
+    `).join('');
+}
+
+function updateAccountSelection() {
+    const checkboxes = document.querySelectorAll('.account-checkbox-label input[type="checkbox"]');
+    selectedAccountIds = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
+}
+
+function selectAllAccounts() {
+    selectedAccountIds = allAccounts.map(a => a.id);
+    renderAccountMultiselect();
+}
+
+function deselectAllAccounts() {
+    selectedAccountIds = [];
+    renderAccountMultiselect();
+}
+
+function applyFilters() {
+    updateChartsFromInputs();
 }
 
 /* Dark Mode Functions */
@@ -1170,6 +1313,88 @@ async function loadCategoryCharts() {
     });
 }
 
+async function loadIncomeCharts() {
+    const startStr = dateToString(dateRangeState.startDate);
+    const endStr = dateToString(dateRangeState.endDate);
+    const filterParams = buildFilterParams();
+    const separator = filterParams ? '&' : '';
+    
+    // Fetch income by counterparty from backend
+    const data = await fetchAPI(`/reports/income-by-counterparty?start_date=${startStr}T00:00:00Z&end_date=${endStr}T23:59:59Z${separator}${filterParams}`);
+    
+    if (!data || data.length === 0) {
+        console.log('No income data');
+        return;
+    }
+    
+    // Take top 10
+    const top = data.slice(0, 10);
+    const labels = top.map(d => d.counterparty);
+    const amounts = top.map(d => d.amount);
+    const colors = [
+        '#2ecc71', '#3498db', '#1abc9c', '#f39c12', '#9b59b6',
+        '#e74c3c', '#34495e', '#e67e22', '#95a5a6', '#d35400'
+    ];
+    
+    const pieCtx = document.getElementById('incomePieChart');
+    if (incomePieChart) incomePieChart.destroy();
+    
+    incomePieChart = new Chart(pieCtx, {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: amounts,
+                backgroundColor: colors
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                },
+                title: {
+                    display: false
+                }
+            }
+        }
+    });
+    
+    const barCtx = document.getElementById('incomeBarChart');
+    if (incomeBarChart) incomeBarChart.destroy();
+    
+    incomeBarChart = new Chart(barCtx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Income Amount',
+                data: amounts,
+                backgroundColor: colors
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                title: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
 async function loadNetWorthChart() {
     const startStr = dateToString(dateRangeState.startDate);
     const endStr = dateToString(dateRangeState.endDate);
@@ -1296,6 +1521,8 @@ async function loadAllCharts() {
     if (cashflowChart) cashflowChart.destroy();
     if (categoryPieChart) categoryPieChart.destroy();
     if (categoryBarChart) categoryBarChart.destroy();
+    if (incomePieChart) incomePieChart.destroy();
+    if (incomeBarChart) incomeBarChart.destroy();
     if (netWorthChart) netWorthChart.destroy();
     if (weeklyChart) weeklyChart.destroy();
     
@@ -1308,6 +1535,10 @@ async function loadAllCharts() {
         await loadCategoryCharts();
         chartInstances.push(categoryPieChart);
         chartInstances.push(categoryBarChart);
+        
+        await loadIncomeCharts();
+        chartInstances.push(incomePieChart);
+        chartInstances.push(incomeBarChart);
         
         await loadNetWorthChart();
         chartInstances.push(netWorthChart);
@@ -1327,6 +1558,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeDarkMode();
     initializeCurrency();
     initializeDateRange();
+    
+    // Load accounts for multiselect filter
+    await loadAccountsList();
     
     // Detect internal transfers on page load
     try {

@@ -17,7 +17,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 os.chdir(project_root)
 
-from app.services.csv_parsers import CSVParserFactory, RaiffeisenParser, RevolutCurrentParser
+from app.services.csv_parsers import CSVParserFactory, RaiffeisenParser, RevolutCurrentParser, KomercniBankaParser
 from app.db.session import SessionLocal, engine
 from app.models import Base, User, Account, Institution, Category, Transaction
 import hashlib
@@ -87,8 +87,16 @@ def test_parser_detection():
     print("Testing CSV Parser Detection")
     print("="*60)
     
+    # Test Komerční Banka
+    with open("transactions_csvs/KB/kb.csv", "r", encoding="utf-8") as f:
+        kb_content = f.read()
+    
+    bank = CSVParserFactory.detect_bank(kb_content)
+    print(f"✓ Komerční Banka detection: {bank}")
+    assert bank == "Komerční Banka", "Komerční Banka detection failed"
+    
     # Test Raiffeisen
-    with open("transactions_csvs/Reiffeisen/Raiffeisen.csv", "rb") as f:
+    with open("transactions_csvs/Raiffeisen/Raiffeisen.csv", "rb") as f:
         raiff_bytes = f.read()
     
     raiff_content = raiff_bytes.decode("windows-1250")
@@ -113,13 +121,45 @@ def test_parser_detection():
     assert bank == "Revolut Crypto", "Revolut Crypto detection failed"
 
 
+def test_kb_parsing():
+    """Test Komerční Banka CSV parsing."""
+    print("\n" + "="*60)
+    print("Testing Komerční Banka CSV Parsing")
+    print("="*60)
+    
+    with open("transactions_csvs/KB/kb.csv", "r", encoding="utf-8") as f:
+        content = f.read()
+    
+    transactions = CSVParserFactory.parse(content)
+    print(f"✓ Parsed {len(transactions)} transactions")
+    
+    assert len(transactions) > 0, "No transactions parsed"
+    
+    # Verify first transaction
+    t = transactions[0]
+    print(f"\nFirst transaction:")
+    print(f"  Date: {t.booking_date.date()}")
+    print(f"  Amount: {t.amount} {t.currency}")
+    print(f"  Description: {t.description[:60]}")
+    print(f"  Counterparty: {t.counterparty}")
+    print(f"  Type: {t.transaction_type}")
+    
+    # Check properties
+    assert t.booking_date is not None, "Booking date missing"
+    assert t.amount is not None, "Amount missing"
+    assert t.currency == "CZK", "Currency should be CZK"
+    assert isinstance(t.amount, Decimal), "Amount should be Decimal"
+    
+    print("\n✓ Komerční Banka parsing works correctly")
+
+
 def test_raiffeisen_parsing():
     """Test Raiffeisen CSV parsing."""
     print("\n" + "="*60)
     print("Testing Raiffeisen CSV Parsing")
     print("="*60)
     
-    with open("transactions_csvs/Reiffeisen/Raiffeisen.csv", "rb") as f:
+    with open("transactions_csvs/Raiffeisen/Raiffeisen.csv", "rb") as f:
         content = f.read().decode("windows-1250")
     
     transactions = CSVParserFactory.parse(content)
@@ -199,7 +239,7 @@ def test_database_integration():
     print(f"✓ Account created: {account.id}")
     
     # Parse and import transactions
-    with open("transactions_csvs/Reiffeisen/Raiffeisen.csv", "rb") as f:
+    with open("transactions_csvs/Raiffeisen/Raiffeisen.csv", "rb") as f:
         content = f.read().decode("windows-1250")
     
     csv_transactions = CSVParserFactory.parse(content)
@@ -276,6 +316,7 @@ def main():
         create_test_institution()
         
         test_parser_detection()
+        test_kb_parsing()
         test_raiffeisen_parsing()
         test_revolut_parsing()
         # Skip database test - deduplication working as intended
@@ -285,7 +326,7 @@ def main():
         print("="*60)
         print("\n✅ CSV import functionality is ready for use!")
         print("\nFeatures implemented:")
-        print("  • CSV parser detection (Raiffeisen, Revolut, Crypto, Stock)")
+        print("  • CSV parser detection (Komerční Banka, Raiffeisen, Revolut, Crypto, Stock)")
         print("  • Multi-encoding support (UTF-8, Windows-1250, etc.)")
         print("  • Transaction deduplication by hash")
         print("  • Manual account creation without bank connections")

@@ -607,10 +607,98 @@ class RevolutStockParser(CSVParser):
         return transactions
 
 
+class KomercniBankaParser(CSVParser):
+    """Parser for Komerční banka CSV exports (Czech)."""
+    
+    def detect(self, file_content: str) -> bool:
+        """Detect Komerční banka format by header."""
+        first_line = file_content.split('\n')[0] if file_content else ""
+        return 'Date,Wallet,Type,"Category name",Amount,Currency,Note,Labels,Author' in first_line
+    
+    def parse(self, file_content: str) -> List[CSVTransaction]:
+        """Parse Komerční banka CSV."""
+        transactions = []
+        
+        lines = file_content.split('\n')
+        lines = [l for l in lines if l.strip()]
+        if not lines:
+            return transactions
+        
+        # Parse as comma-delimited CSV
+        reader = csv.DictReader(io.StringIO('\n'.join(lines)))
+        
+        for row in reader:
+            try:
+                # Parse date (ISO 8601 format with timezone)
+                date_str = row.get('Date', '').strip()
+                if not date_str:
+                    continue
+                
+                # Handle ISO 8601 format: 2024-12-23T11:00:00+00:00
+                if 'T' in date_str:
+                    # Remove timezone info for parsing
+                    date_str = date_str.split('+')[0].split('-', 3)[:3]
+                    date_str = '-'.join(date_str[:3])
+                    if 'T' in date_str:
+                        date_str = date_str.split('T')[0]
+                
+                booking_date = datetime.strptime(date_str, '%Y-%m-%d')
+                
+                # Parse amount
+                amount_str = row.get('Amount', '0').strip()
+                amount = self.parse_iso_decimal(amount_str)
+                
+                # Get currency
+                currency = row.get('Currency', 'CZK').strip()
+                
+                # Get description from Note field
+                description = row.get('Note', '').strip()
+                
+                # Extract counterparty from description if available
+                counterparty = ""
+                if description:
+                    # Try to extract counterparty from patterns like "Deposit, CZXXXX, Name"
+                    parts = description.split(',')
+                    if len(parts) >= 3:
+                        counterparty = parts[2].strip()
+                    elif len(parts) >= 2:
+                        # For "Revolut**XXXX* Dublin IRL" type
+                        counterparty = parts[0].strip()
+                
+                # Get transaction type
+                tx_type = row.get('Type', '').strip().lower()
+                
+                # Create transaction
+                transaction = CSVTransaction(
+                    booking_date=booking_date,
+                    value_date=booking_date,
+                    amount=amount,
+                    currency=currency,
+                    description=description,
+                    counterparty=counterparty,
+                    transaction_type=tx_type if tx_type in ['expense', 'income'] else 'payment',
+                    metadata={
+                        'wallet': row.get('Wallet', '').strip(),
+                        'category': row.get('Category name', '').strip(),
+                        'labels': row.get('Labels', '').strip(),
+                        'author': row.get('Author', '').strip()
+                    }
+                )
+                
+                transactions.append(transaction)
+                
+            except Exception as e:
+                print(f"Error parsing KB row: {e}, row: {row}")
+                continue
+        
+        return transactions
+
+
 class CSVParserFactory:
     """Factory to detect and use appropriate parser."""
     
     PARSERS = [
+        KomercniBankaParser(),
         RaiffeisenParser(),
         RevolutCryptoParser(),  # Try crypto before current (more specific)
         RevolutStockParser(),
@@ -630,7 +718,9 @@ class CSVParserFactory:
     @classmethod
     def detect_bank(cls, file_content: str) -> Optional[str]:
         """Detect which bank the CSV is from."""
-        if RaiffeisenParser().detect(file_content):
+        if KomercniBankaParser().detect(file_content):
+            return "Komerční Banka"
+        elif RaiffeisenParser().detect(file_content):
             return "Raiffeisen"
         elif RevolutCryptoParser().detect(file_content):
             return "Revolut Crypto"

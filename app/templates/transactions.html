@@ -222,10 +222,10 @@ function applyFilters() {
     if (account) filters.account_id = account;
     
     const dateFrom = document.getElementById('dateFrom').value;
-    if (dateFrom) filters.date_from = dateFrom;
+    if (dateFrom) filters.date_from = dateFrom + 'T00:00:00';
     
     const dateTo = document.getElementById('dateTo').value;
-    if (dateTo) filters.date_to = dateTo;
+    if (dateTo) filters.date_to = dateTo + 'T23:59:59';
     
     const status = document.getElementById('statusFilter').value;
     if (status) filters.status = status;

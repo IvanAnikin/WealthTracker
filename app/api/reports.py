@@ -22,7 +22,7 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 def cashflow_report(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
-    account_id: Optional[str] = Query(None),
+    account_id: Optional[List[str]] = Query(None),
     exclude_investment: bool = Query(False),
     exclude_internal_transfers: bool = Query(False),
     currency: Optional[str] = Query('USD'),
@@ -48,7 +48,7 @@ def cashflow_report(
 def category_report(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
-    account_id: Optional[str] = Query(None),
+    account_id: Optional[List[str]] = Query(None),
     exclude_investment: bool = Query(False),
     exclude_internal_transfers: bool = Query(False),
     currency: Optional[str] = Query('USD'),
@@ -102,10 +102,33 @@ def accounts_summary(
     return {"accounts": data, "as_of_date": as_of_date.isoformat()}
 
 
+@router.get("/accounts/list")
+def list_accounts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get list of user's accounts for filtering."""
+    from app.models import Account
+    
+    accounts = db.query(Account).filter(Account.user_id == current_user.id).all()
+    return {
+        "accounts": [
+            {
+                "id": acc.id,
+                "name": acc.name or f"Account {acc.id[:8]}",
+                "currency": acc.currency,
+                "institution_id": acc.institution_id
+            }
+            for acc in accounts
+        ]
+    }
+
+
 @router.get("/statistics")
 def transaction_stats(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
+    account_id: Optional[List[str]] = Query(None),
     exclude_investment: bool = Query(False),
     exclude_internal_transfers: bool = Query(False),
     currency: Optional[str] = Query('USD'),
@@ -119,7 +142,7 @@ def transaction_stats(
         start_date = end_date - timedelta(days=30)
     
     stats = get_transaction_statistics(
-        db, current_user.id, start_date, end_date,
+        db, current_user.id, start_date, end_date, account_id,
         exclude_investment=exclude_investment,
         exclude_internal_transfers=exclude_internal_transfers,
         currency=currency
@@ -147,3 +170,26 @@ def detect_internal_transfers(
         "updated_count": updated_count,
         "message": f"Detected and marked {updated_count} internal transfer transactions"
     }
+
+
+@router.get("/income-by-counterparty")
+def income_by_counterparty(
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    account_id: Optional[List[str]] = Query(None),
+    currency: Optional[str] = Query('USD'),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get income breakdown by counterparty, excluding internal transfers."""
+    from app.services.report_service import get_income_by_counterparty
+    
+    if not end_date:
+        end_date = datetime.utcnow()
+    if not start_date:
+        start_date = end_date - timedelta(days=365)
+    
+    data = get_income_by_counterparty(
+        db, current_user.id, start_date, end_date, account_id, currency=currency
+    )
+    return data
